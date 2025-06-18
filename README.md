@@ -518,6 +518,7 @@ int  main(int  argc, char *argv[])
 ```c
 #include <pwd.h> //Ditambahkan pada soal c
 ```
+_Library_ pada bahasa C yang memberikan akses kepada fungsi dan tipe data seperti `uid_t`, `getpwuid()`, dan `passwd` yang mengandung `pw_name`. Dengan _library_ ini, program bisa memeriksa siapa _user_ yang sedang mengakses lokasi _mount_ sehingga akan diberikan respons yang sesuai. 
 
 ```c
 //Bagian yang ditambahkan pada soal c
@@ -539,6 +540,39 @@ int  main(int  argc, char *argv[])
     }
     //Bagian yang ditambahkan pada soal c
 ```
+Ini adalah bagian yang ditambahkan pada fungsi `xmp_getattr()` yang bertujuan untuk mendapatkan informasi atribut dari _file_ yang ada. Atribut yang dimaksud meliputi keberadaan, ukuran, jenis, izin akses, dan lainnya dari sebuah _file_.
+
+- ```c
+  if(strcmp(path, "/very_spicy_info.txt") == 0){ ... }
+  ``` 
+Memeriksa apakah _file_ yang sedang diakses adalah `very_spicy_info.txt` atau bukan menggunakan fungsi `strcmp` yang akan membandingkan `string`. Jika iya (`strcmp` akan mengembalikan `0`), maka ada proses lebih lanjut yang dilakukan.
+
+- ```c
+  uid_t user_id = fuse_get_context()->uid;
+  ``` 
+Bagian ini berfungsi untuk mendapatkan _ID user_ yang sedang mengakses _FUSE_. `fuse_get_context()->uid` akan mengakses data `uid` yang ada pada `struct fuse_context`. Data `uid` tersebut kemudian disimpan dalam variabel `user_id` yang bertipe data `uid_t`. 
+
+- ```c
+  struct passwd* user_info = getpwuid(user_id);
+  ``` 
+Bagian ini bertujuan untuk mendapatkan informasi lengkap dari _user_ yang sudah diperoleh _ID_-nya dengan `getpwuid(user_id)`. `struct passwd` adalah `struct` yang menyimpan beberapa informasi _user_ seperti nama (`pw_name`), _password_ (`pw_password`), dan lainnya. Dengan demikian, data nama _user_ akan disimpan ke dalam `struct passwd` yang sesuai.
+
+- ```c
+  if(user_info != NULL && strcmp(user_info->pw_name, "DainTontas") == 0){
+       stbuf->st_size = strlen("Very spicy internal developer information: leaked roadmap.docx\n");
+  }
+  ```
+Jika `getpwuid()` berhasil menemukan informasi _user_ (`user_info` tidak `NULL`) dan nama dari _user_ yang ditemukan adalah `DainTontas` (menggunakan perbandingan `strcmp`), maka ukuran _file_ yang akan dilaporkan ke sistem sebesar panjang `string` dari pesan yang akan disampaikan ke `DainTontas`, yaitu `"Very spicy internal developer information: leaked roadmap.docx"`. `stbuf->st_size` adalah data pada `stbuf` yang menunjukkan ukuran _file_ yang sedang diakses.
+
+- ```c
+  stbuf->st_mode = S_IFREG | 0444;
+  ``` 
+`stbuf->st_mode` adalah data pada `stbuf` yang menyimpan jenis dan izin akses suatu _file_. Dengan memberikan makro `S_IFREG`, program akan tahu bahwa _file_ yang diakses adalah _file_ biasa (contohnya `.txt`) dan juga izin akses `0444` yang berarti _read-only_ bagi semua _user_. Secara garis besar, program akan tahu bahwa _file_ yang akan diakses adalah _file_ biasa yang bisa dibaca oleh siapa saja.
+
+- ```c
+  stbuf->st_nlink = 1;
+  ```
+`stbuf->st_nlink` adalah data pada `stbuf` yang memberi tahu jumlah _hard link_ pada _file_ yang ingin diakses. Untuk _file_ biasa seperti `.txt`, jumlah _link_ diatur ke angka `1`.
 
 ```c
     //Bagian yang ditambahkan pada soal c
