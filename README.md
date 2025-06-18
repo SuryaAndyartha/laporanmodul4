@@ -714,6 +714,7 @@ Jika _user_ yang sedang mengakses bukan `DainTontas`, maka pesan yang dikirim ak
 ```c
 #include <stdbool.h> //Ditambahkan pada soal d
 ```
+_Library_ pada bahasa C yang memberikan akses kepada tipe data `bool`. Dengan _library_ ini, program bisa melakukan pemeriksaan status apakah _trap_ aktif atau tidak. 
 
 ```c
     //Bagian yang ditambahkan pada soal d
@@ -730,6 +731,33 @@ Jika _user_ yang sedang mengakses bukan `DainTontas`, maka pesan yang dikirim ak
     }
     //Bagian yang ditambahkan pada soal d
 ```
+Ini adalah bagian yang ditambahkan pada fungsi `xmp_getattr()`. Secara garis besar, bagian kode ini memastikan bahwa ketika `DainTontas` memicu pesan _trap_, maka pesan tersebut bisa dikirimkan dengan baik oleh sistem dengan terlebih dahulu mendapatkan informasi attribut _file_-nya.
+
+- ```c
+  if(is_trap_active() && strlen(path) >= 4 && strcmp(path + strlen(path) - 4, ".txt") == 0){ ... }
+  ```
+Ada tiga kondisi yang harus dipenuhi agar proses yang berada di dalam kondisi `if` ini bisa berjalan. 
+1. Jika fungsi `is_trap_active()` mengembalikan nilai `true` (fungsi ini akan dijelaskan di bawah)
+2. Jika panjang `path` lebih dari atau sama dengan `4`, untuk memastikan bahwa `path` cukup panjang karena program harus memeriksa _file_ `.txt` yang memiliki paling sedikit 4 karakter. 
+3. Jika 4 karakter terakhir (`path + strlen(path) - 4`) dari `path` sama dengan `".txt"` yang dibandingkan menggunakan fungsi `strcmp`. 
+Ketika ketiga kondisi tersebut dipenuhi, maka akan ada proses lebih lanjut. 
+
+- ```c
+  uid_t user_id = fuse_get_context()->uid;
+  struct passwd* user_info = getpwuid(user_id);
+
+  if(user_info != NULL && strcmp(user_info->pw_name, "DainTontas") == 0){ ... }
+  ```
+Potongan kode ini bertujuan untuk memeriksa siapa _user_ yang sedang mengakses _file_. Jika `DainTontas` yang sedang melakukannya, maka akan ada proses lebih lanjut. Jika tidak, maka tidak ada. Bagian ini sudah dijelaskan di atas. 
+
+- ```c
+  stbuf->st_mode = S_IFREG | 0444;
+  stbuf->st_nlink = 1;
+  stbuf->st_size = strlen(ascii_art);
+  ```
+Ketika `DainTontas` yang mengakses _file_, maka jenis _file_ akan ditetapkan sebagai _file_ biasa (`S_IFREG`) dan izin akses membaca bagi semua _user_ (`0444`). _File_ biasa yang merupakan `.txt` tersebut juga akan memiliki 1 _hard link_ sebagai _default_. Dan juga ukuran dari _file_ akan sebesar panjang dari `string ascii_art`, yaitu pesan _trap_ yang akan diberikan kepada `DainTontas` (`string ascii_art` akan dijelaskan di bawah).
+
+
 
 ```c
 //Bagian yang ditambahkan pada soal d
@@ -763,6 +791,44 @@ Jika _user_ yang sedang mengakses bukan `DainTontas`, maka pesan yang dikirim ak
     }
     //Bagian yang ditambahkan pada soal d
 ```
+Ini adalah bagian yang ditambahkan pada fungsi `xmp_read()`. Secara garis besar, potongan kode ini akan memastikan bahwa pembacaan pesan _trap_ yang diaktifkan oleh `DainTontas` sesuai dengan yang diinginkan. 
+
+- ```c
+  if(is_trap_active() && strlen(path) >= 4 && strcmp(path + strlen(path) - 4, ".txt") == 0){
+       uid_t user_id = fuse_get_context()->uid;
+       struct passwd* user_info = getpwuid(user_id);
+     
+       if(user_info != NULL && strcmp(user_info->pw_name, "DainTontas") == 0){ ... }
+  ```
+Bagian kode ini pada dasarnya sama dengan yang sudah dijelaskan pada bagian `xmp_getattr()`. Bagian ini akan memeriksa apakah fungsi `is_trap_active` mengembalikan `true`, panjang `path` lebih dari atau sama dengan `4`, dan `path` berakhiran dengan `.txt`. Akan dilakukan pemeriksaan juga siapa _user_ yang sedang mengakses _file_. Jika `DainTontas` yang sedang melakukannya, maka akan ada proses lebih lanjut, jika bukan, maka tidak ada. 
+
+- ```c
+  int len = strlen(ascii_art);
+  ```
+Potongan kode ini akan mendapatkan panjang `string` dari pesan _trap_ yang akan dikirimkan ke `DainTontas` menggunakan fungsi `strlen`. Nilainya akan disimpan dalam variabel `len` bertipe `integer`.
+
+- ```c
+  if(offset >= len){
+      return 0;
+  }
+
+  int message_remaining = len - offset;
+  int character_count;
+
+  if(size < message_remaining){
+      character_count = size;
+  }
+  else{
+      character_count = message_remaining;
+  }
+
+  for(int i = 0; i < character_count; i++){
+      buf[i] = ascii_art[offset + i];
+  }
+
+  return character_count;
+  ```
+Bagian kode ini juga memiliki logika yang sama seperti yang sudah pernah dijelaskan pada `xmp_read()` di soal C. Pada dasarnya, bagian ini akan memeriksa berapa banyak jumlah karakter atau panjang pesan yang bisa dikirimkan oleh sistem dari serangkaian kondisi `if`. Setelah itu, pesan yang akan dikirimkan tersebut disalin dari `string` pesan ke _buffer_ `buf` menggunakan perulangan `for`. Jumlah karakter yang bisa dikirimkan juga dikembalikan supaya sistem bisa diberi tahu berapa banyak karakter yang berhasil dibaca dan disalin. 
 
 ```c
 //Bagian yang ditambahkan pada soal d
@@ -777,6 +843,7 @@ const char* ascii_art =
 "                                               |___/                                                 \n";
 
 ```
+Ini adalah variabel `char* ascii_art` yang merupakan pesan _trap_. Pesan ini akan dikirimkan ketika `DainTontas` memicu sesuatu di dalam _FUSE_. Pesan trap ini bertuliskan `"Fell for it again reward"` dalam `ASCII ART`. 
 
 ```c
 bool is_trap_active(){
@@ -784,6 +851,7 @@ bool is_trap_active(){
 }
 //Bagian yang ditambahkan pada soal d
 ```
+Bagian ini adalah fungsi yang akan memeriksa apakah _trap_ sudah aktif atau belum dengan cara melakukan percobaan akses ke _file_ `.trap` yang ada di direktori `./fusedata`. Argumen `F_OK` bertujuan untuk memeriksa apakah _file_ ada. Jika ada, maka fungsi `access()` akan mengembalikan `0` yang berarti kondisi `return` tersebut `true` dan fungsi `is_trap_active()` juga akan mengembalikan nilai `true`. Pembuatan _file_ pemicu, yaitu `.trap` akan dijelaskan pada bagian fungsi `xmp_write()`.
 
 ```
 //Bagian yang ditambahkan pada soal d
@@ -792,12 +860,14 @@ bool is_trap_active(){
     .create = xmp_create,
     //Bagian yang ditambahkan pada soal d
 ```
+Pada bagian ini, ditambahkan operasi _FUSE_ pada `struct fuse_operations xmp_oper` sehingga fungsi-fungsi baru yang akan digunakan bisa dipanggil dengan baik. Di sini, ada tiga fungsi yang ditambahkan yaitu `xmp_write()`, `xmp_truncate()`, dan `xmp_create()`. 
 
 ```c
 static int xmp_write(const char *path, const char *buf, size_t size,
              off_t offset, struct fuse_file_info *fi)
 { ... }
 ```
+Fungsi `xmp_write()` adalah fungsi yang digunakan ketika sistem ingin mencoba menulis ke dalam _file_, misalnya pada saat perintah `echo` digunakan. Tindakan penulisan ke dalam suatu _file_ oleh `DainTontas` ini yang akan menjadi pemicu aktivasi dari _trap_ yang ada pada sistem. Bagian pada fungsi `xmp_write()` yang ditambahkan ada di bawah.  
 
 ```c
     if(strcmp(path, "/upload.txt") == 0 && strncmp(buf, "upload", 6) == 0){
@@ -809,6 +879,25 @@ static int xmp_write(const char *path, const char *buf, size_t size,
         }   
     }
 ```
+Ini adalah bagian yang ditambahkan pada fungsi `xmp_write()`. 
+
+- ```c
+  if(strcmp(path, "/upload.txt") == 0 && strncmp(buf, "upload", 6) == 0){ ... }
+  ```
+Pada bagian ini, dilakukan pemeriksaan apakah _file_ yang sedang diakses merupakan `upload.txt` atau bukan menggunakan fungsi `strcmp`. Serta, dilakukan pengecekan apakah pesan yang ditulis ke _file_ tersebut adalah `string` `"upload"` atau bukan. `strncmp` akan membandingkan satu per satu isi dari buffer `buf` pada sistem dengan `string "upload"` sebanyak `6` karakter. 
+
+- ```c
+  FILE *trap_file = fopen("/home/ubuntu/praktikum-modul-4-d10/fusedata/.trap", "w");
+  ```
+Jika _file_ yang diakses adalah `upload.txt` dan dituliskan pesan `"upload"` ke dalam _file tersebut_, maka program akan membuka _file_ `.trap` yang akan menjadi penanda apakah _trap_ tersebut aktif atau tidak. Dengan fungsi `fopen` dan opsi `w`, program bisa membuat _file_ (jika belum ada), membukanya, dan menuliskan pesan sesuai yang diinginkan.
+
+- ```c
+  if(trap_file != NULL){
+       fprintf(trap_file, "trap activated.\n");
+       fclose(trap_file);
+  }   
+  ```
+Jika _file_ `.trap` berhasil dibuka dan ada (`trap_file != NULL`), maka program akan menuliskan `"trap activated"` ke _file_ `.trap` dan menutup _file_ tersebut. Penulisan pesan aktivasi _trap_ ke _file_ `.trap` ini bersifat opsional. 
 
 ```c
 static int xmp_truncate(const char *path, off_t size)
@@ -816,6 +905,7 @@ static int xmp_truncate(const char *path, off_t size)
      ...
 }
 ```
+Fungsi `xmp_truncate()` adalah fungsi yang dipanggil ketika ada _file_ yang ukurannya diubah sebagai antisipasi jika adanya penulisan ke dalam _file_ dengan perintah `echo`. Fungsi ini akan melakukan _reset_ panjang _file_ ke `0` atau melakukan _resize_ isi _file_.
 
 ```c
 static int xmp_create(const char *path, mode_t mode, struct fuse_file_info *fi)
@@ -823,6 +913,7 @@ static int xmp_create(const char *path, mode_t mode, struct fuse_file_info *fi)
      ...
 }
 ```
+Fungsi `xmp_create()` adalah fungsi yang dipanggil ketika ada _file_ yang ingin dibuat. Dengan fungsi ini, _file_ `,trap` yang baru dibuat ketika proses _mount FUSE_ bisa dilakukan. Ketika tidak adanya fungsi ini, proses tersebut akan memberikan pesan `input/output error`. 
 
 ### Foto Hasil Output
 
