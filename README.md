@@ -94,9 +94,29 @@ sudo passwd Ryeku
 
 ### Penjelasan:
 
+```sh
+sudo useradd -m -s /bin/bash [namauser]
+```
+Ini adalah perintah untuk membuat _user_ baru pada _Linux_. Perintah tersebut terdiri dari:
+- `sudo` : Memperbolehkan _user_ untuk menjalankan perintah sebagai _superuser_ atau `root`. 
+- `useradd` : Sebuah utilitas untuk membuat _user_ secara manual, membutuhkan akses _superuser_ untuk dijalankan.
+- `-m` : Sebuah opsi untuk membuat direktori `home` secara otomatis pada _user_ yang telah kita buat (`/home/[namauser]`).
+- `-s /bin/bash` : Opsi `-s` berarti `shell` dan `/bin/bash` adalah _path_ ke `bash` untuk memastikan bahwa _user_ yang baru dibuat bisa _login_ ke `bash`.
+- `[namauser]` : Nama _user_ sesuai yang diinginkan. Pada soal ini, _user_ yang dibuat adalah `DainTontas`, `SunnyBolt`, dan `Ryeku`. 
+
+```sh
+sudo passwd [namauser]
+```
+Bagian ini merupakan perintah untuk mengatur (membuat atau mengganti) _password_ yang ada pada suatu _user_ di _Linux_.
+- `sudo` : Memperbolehkan _user_ untuk menjalankan perintah sebagai _superuser_ atau `root`. 
+- `passwd` : Program untuk mengubah _password user_, membutuhkan akses _superuser_ untuk dijalankan.
+- `[namauser]` : Nama _user_ sesuai yang diinginkan. Pada soal ini, _user_ yang dibuat adalah `DainTontas`, `SunnyBolt`, dan `Ryeku`. 
+
+Setelah perintah ini dijalankan, maka sistem akan meminta _user_ untuk memasukkan _password_, kali ini _password_ dibebaskan.
+
 ### Foto Hasil Output
 
-![image alt]()
+![image alt](https://github.com/SuryaAndyartha/laporanmodul4/blob/main/Screenshot%202025-06-15%20at%2021.17.19.png?raw=true)
 
 ## **b. Jebakan Troll**
 
@@ -108,11 +128,13 @@ sudo passwd Ryeku
 
 ![image alt]()
 
+---
 ### Kode lengkap troll.c
 
 ```c
 
 ```
+---
 
 ## **c. Jebakan Troll (Berlanjut)**
 
