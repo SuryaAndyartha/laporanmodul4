@@ -712,9 +712,122 @@ Jika _user_ yang sedang mengakses bukan `DainTontas`, maka pesan yang dikirim ak
 ## **d. Trap**
 
 ```c
+#include <stdbool.h> //Ditambahkan pada soal d
+```
 
+```c
+    //Bagian yang ditambahkan pada soal d
+    if(is_trap_active() && strlen(path) >= 4 && strcmp(path + strlen(path) - 4, ".txt") == 0){
+        uid_t user_id = fuse_get_context()->uid;
+        struct passwd* user_info = getpwuid(user_id);
+
+        if(user_info != NULL && strcmp(user_info->pw_name, "DainTontas") == 0){
+            stbuf->st_mode = S_IFREG | 0444;
+            stbuf->st_nlink = 1;
+            stbuf->st_size = strlen(ascii_art);
+            return 0;
+        }
+    }
+    //Bagian yang ditambahkan pada soal d
+```
+
+```c
+//Bagian yang ditambahkan pada soal d
+    if(is_trap_active() && strlen(path) >= 4 && strcmp(path + strlen(path) - 4, ".txt") == 0){
+        uid_t user_id = fuse_get_context()->uid;
+        struct passwd* user_info = getpwuid(user_id);
+
+        if(user_info != NULL && strcmp(user_info->pw_name, "DainTontas") == 0){
+            int len = strlen(ascii_art);
+
+            if(offset >= len){
+                return 0;
+            }
+
+            int message_remaining = len - offset;
+            int character_count;
+
+            if(size < message_remaining){
+                character_count = size;
+            }
+            else{
+                character_count = message_remaining;
+            }
+
+            for(int i = 0; i < character_count; i++){
+                buf[i] = ascii_art[offset + i];
+            }
+
+            return character_count;
+        }
+    }
+    //Bagian yang ditambahkan pada soal d
+```
+
+```c
+//Bagian yang ditambahkan pada soal d
+const char* ascii_art =
+"  ______   _ _    __             _ _                       _                                        _ \n"
+" |  ____| | | |  / _|           (_) |                     (_)                                      | |\n"
+" | |__ ___| | | | |_ ___  _ __   _| |_    __ _  __ _  __ _ _ _ __    _ __ _____      ____ _ _ __ __| |\n"
+" |  __/ _ \\ | | |  _/ _ \\| '__| | | __|  / _` |/ _` |/ _` | | '_ \\  | '__/ _ \\ \\ /\\ / / _` | '__/ _` |\n"
+" | | |  __/ | | | || (_) | |    | | |_  | (_| | (_| | (_| | | | | | | | |  __/\\ V  V / (_| | | | (_| |\n"
+" |_|  \\___|_|_| |_| \\___/|_|    |_|\\__|  \\__,_|\\__, |\\__,_|_|_| |_| |_|  \\___| \\_/\\_/ \\__,_|_|  \\__,_|\n"
+"                                                __/ |                                                \n"
+"                                               |___/                                                 \n";
+
+```
+
+```c
+bool is_trap_active(){
+     return access("/home/ubuntu/praktikum-modul-4-d10/fusedata/.trap", F_OK) == 0;
+}
+//Bagian yang ditambahkan pada soal d
+```
+
+```
+//Bagian yang ditambahkan pada soal d
+    .write = xmp_write,
+    .truncate = xmp_truncate,   
+    .create = xmp_create,
+    //Bagian yang ditambahkan pada soal d
+```
+
+```c
+static int xmp_write(const char *path, const char *buf, size_t size,
+             off_t offset, struct fuse_file_info *fi)
+{ ... }
+```
+
+```c
+    if(strcmp(path, "/upload.txt") == 0 && strncmp(buf, "upload", 6) == 0){
+        FILE *trap_file = fopen("/home/ubuntu/praktikum-modul-4-d10/fusedata/.trap", "w");
+
+        if(trap_file != NULL){
+            fprintf(trap_file, "trap activated.\n");
+            fclose(trap_file);
+        }   
+    }
+```
+
+```c
+static int xmp_truncate(const char *path, off_t size)
+{
+     ...
+}
+```
+
+```c
+static int xmp_create(const char *path, mode_t mode, struct fuse_file_info *fi)
+{
+     ...
+}
 ```
 
 ### Foto Hasil Output
 
-![image alt]()
+![image alt](https://github.com/SuryaAndyartha/laporanmodul4/blob/main/Screenshot%202025-06-18%20at%2011.57.59.png?raw=true)
+
+_Trap_ bersifat _persist_
+![image alt](https://github.com/SuryaAndyartha/laporanmodul4/blob/main/Screenshot%202025-06-18%20at%2012.00.30.png?raw=true)
+![image alt](https://github.com/SuryaAndyartha/laporanmodul4/blob/main/Screenshot%202025-06-18%20at%2012.00.21.png?raw=true)
