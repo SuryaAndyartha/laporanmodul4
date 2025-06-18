@@ -129,6 +129,10 @@ cd praktikum-modul-4-d10/fusedata
 touch very_spicy_info.txt upload.txt
 ```
 Hal pertama yang dilakukan adalah membuat direktori `fusedata` yang akan menyimpan `very_spicy_info.txt` dan `upload.txt`.
+- `mkdir` : Perintah untuk membuat direktori.
+- `-p` : Opsi untuk memastikan jika _folder_ yang berada di tingkat yang lebih tinggi dari _folder_ yang akan dibuat (_parent folder_) belum ada, maka _parent folder_ tersebut akan dibuat juga.
+- `cd` : Perintah untuk berganti direktori ke tujuan yang diinginkan.
+- `touch` : Perintah untuk membuat _file_ baru, jika belum ada.
 
 2. Langkah 2
 ```sh
@@ -137,29 +141,43 @@ sudo mkdir -p /mnt/troll
 sudo chmod 755 /mnt
 sudo chmod 755 /mnt/troll
 ```
-Lalu membuat direktori `troll` pada _folder_ `/mnt`, sehingga akan terbentuk `/mnt/troll` sebagai tempat _mount FUSE_. 
+Lalu membuat direktori `troll` pada _folder_ `/mnt`, sehingga akan terbentuk `/mnt/troll` sebagai tempat _mount FUSE_. Direktori `/mnt` dan `troll` diberikan akses menggunakan `chmod 755` sehingga grup dan _user_ lain bisa _write_ dan _execute_. Hal ini penting karena kita akan mengakses direktori `troll` tersebut dari berbagai _user_.  
 
 3. Langkah 3
 ```sh
 mkdir -p praktikum-modul-4-d10/troll.c
 nano troll.c
 ```
-Setelahnya, membuat _file_ `troll.c` yang pada awalnya akan diisi oleh kode program _FUSE_ yang terdapat pada Modul 4 Sistem Operasi (https://github.com/arsitektur-jaringan-komputer/Modul-Sisop/blob/master/Modul4/README-ID.md).
+Setelahnya, membuat _file_ `troll.c` dengan perintah `nano`, yang pada awalnya akan diisi oleh kode program _FUSE_ yang terdapat pada Modul 4 Sistem Operasi (https://github.com/arsitektur-jaringan-komputer/Modul-Sisop/blob/master/Modul4/README-ID.md). 
+
+Serta, _path_ direktori yang akan disalin isinya diganti juga sesuai yang diinginkan. Dalam kasus ini, `dirpath` diganti menjadi `/home/ubuntu/praktikum-modul-4-d10/fusedata`.
+```sh
+static  const  char *dirpath = "/home/ubuntu/praktikum-modul-4-d10/fusedata"; //Path direktori diganti
+```
 
 4. Langkah 4
 ```sh
 sudo nano /etc/fuse.conf
 ```
+Langkah berikutnya adalah membuka _file_ konfigurasi _FUSE_ dengan perintah `nano`, di mana bagian `user_allow_other` diaktifkan dengan cara menghilangkan karakter `#` di awal sehingga tidak lagi menjadi _command_. Langkah ini bertujuan untuk memperbolehkan _user_ selain pemilik mengakses _file_ di lokasi _mount_.
 
 5. Langkah 5
 ```sh
 gcc -Wall `pkg-config fuse --cflags` troll.c -o troll `pkg-config fuse --libs`
 ```
+Melakukan kompilasi _file_ `troll.c` sesuai dengan panduan dari Modul 4 Sistem Operasi. _Output_ yang dihasilkan berupa _file_ `troll`.
 
 6. Langkah 6
 ```sh
 sudo ./troll -f -o allow_other /mnt/troll
 ```
+Menjalankan program _FUSE_ bernama `troll`.
+
+- `sudo` : Memperbolehkan _user_ untuk menjalankan perintah sebagai _superuser_ atau `root`. 
+- `./troll` : Menjalankan _file_ bernama `troll` yang merupakan hasil kompilasi `troll.c` dari direktori saat ini `(./)`.
+- `-f` : Opsi untuk menjalankan program _FUSE_ di _foreground_, yang akan membantu dalam proses _debugging_.
+- `-o allow_other` : Opsi _FUSE_ untuk mengizinkan _user_ lain dalam mengakses direktori lokasi _mount_.
+- `/mnt/troll` : Lokasi _mount_ dilakukan, yaitu tempat di mana _FUSE_ akan dieksekusi. 
 
 ### Foto Hasil Output
 
@@ -495,13 +513,98 @@ int  main(int  argc, char *argv[])
 
 ## **c. Jebakan Troll (Berlanjut)**
 
-```c
+### Penjelasan:
 
+```c
+#include <pwd.h> //Ditambahkan pada soal c
+```
+
+```c
+//Bagian yang ditambahkan pada soal c
+    if(strcmp(path, "/very_spicy_info.txt") == 0){
+        uid_t user_id = fuse_get_context()->uid;
+        struct passwd* user_info = getpwuid(user_id);
+
+        if(user_info != NULL && strcmp(user_info->pw_name, "DainTontas") == 0){
+            stbuf->st_size = strlen("Very spicy internal developer information: leaked roadmap.docx\n");
+        }
+        else{
+            stbuf->st_size = strlen("DainTontas' personal secret!!.txt\n");
+        }
+
+        stbuf->st_mode = S_IFREG | 0444;
+        stbuf->st_nlink = 1;
+
+        return 0;
+    }
+    //Bagian yang ditambahkan pada soal c
+```
+
+```c
+    //Bagian yang ditambahkan pada soal c
+    if(strcmp(path, "/very_spicy_info.txt") == 0){
+        uid_t user_id = fuse_get_context()->uid;
+        struct passwd* user_info = getpwuid(user_id);
+
+        if(user_info != NULL && strcmp(user_info->pw_name, "DainTontas") == 0){
+            char* message_DainTontas = "Very spicy internal developer information: leaked roadmap.docx\n";
+
+            int len = strlen(message_DainTontas);
+
+            if(offset >= len){
+                return 0;
+            }
+
+            int message_remaining = len - offset;
+            int character_count;
+
+            if(size < message_remaining){
+                character_count = size;
+            }
+            else{
+                character_count = message_remaining;
+            }
+
+            for(int i = 0; i < character_count; i++){
+                buf[i] = message_DainTontas[offset + i];
+            }
+
+            return character_count;
+        }
+        else{
+            char* message_Other = "DainTontas' personal secret!!.txt\n";
+
+            int len = strlen(message_Other);
+
+            if(offset >= len){
+                return 0;
+            }
+
+            int message_remaining = len - offset;
+            int character_count;
+
+            if(size < message_remaining){
+                character_count = size;
+            }
+            else{
+                character_count = message_remaining;
+            }
+
+            for(int i = 0; i < character_count; i++){
+                buf[i] = message_Other[offset + i];
+            }
+
+            return character_count;
+        }
+
+        return 0;
+    }
+    //Bagian yang ditambahkan soal c
 ```
 
 ### Foto Hasil Output
 
-![image alt]()
+![image alt](https://github.com/SuryaAndyartha/laporanmodul4/blob/main/Screenshot%202025-06-18%20at%2010.03.15.png?raw=true)
 
 ## **d. Trap**
 
