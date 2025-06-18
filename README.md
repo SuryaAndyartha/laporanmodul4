@@ -561,8 +561,13 @@ Bagian ini bertujuan untuk mendapatkan informasi lengkap dari _user_ yang sudah 
   if(user_info != NULL && strcmp(user_info->pw_name, "DainTontas") == 0){
        stbuf->st_size = strlen("Very spicy internal developer information: leaked roadmap.docx\n");
   }
+  else{
+       stbuf->st_size = strlen("DainTontas' personal secret!!.txt\n");
+  }
   ```
-Jika `getpwuid()` berhasil menemukan informasi _user_ (`user_info` tidak `NULL`) dan nama dari _user_ yang ditemukan adalah `DainTontas` (menggunakan perbandingan `strcmp`), maka ukuran _file_ yang akan dilaporkan ke sistem sebesar panjang `string` dari pesan yang akan disampaikan ke `DainTontas`, yaitu `"Very spicy internal developer information: leaked roadmap.docx"`. `stbuf->st_size` adalah data pada `stbuf` yang menunjukkan ukuran _file_ yang sedang diakses.
+Jika `getpwuid()` berhasil menemukan informasi _user_ (`user_info` tidak `NULL`) dan nama dari _user_ yang ditemukan adalah `DainTontas` (menggunakan perbandingan `strcmp`), maka ukuran _file_ yang akan dilaporkan ke sistem sebesar panjang `string` dari pesan yang akan disampaikan ke `DainTontas`, yaitu `"Very spicy internal developer information: leaked roadmap.docx"`. Sedangkan, jika _user_ lain yang sedang mengakses _file_-nya, maka ukuran _file_ akan ditetapkan sebesar panjang dari pesan `"DainTontas' personal secret!!.txt"`.
+
+`stbuf->st_size` adalah data pada `stbuf` yang menunjukkan ukuran _file_ yang sedang diakses.
 
 - ```c
   stbuf->st_mode = S_IFREG | 0444;
@@ -635,6 +640,70 @@ Jika `getpwuid()` berhasil menemukan informasi _user_ (`user_info` tidak `NULL`)
     }
     //Bagian yang ditambahkan soal c
 ```
+Ini adalah bagian yang ditambahkan pada fungsi `xmp_read()` yang bertujuan untuk membaca isi _file_ dari _disk_ sebenarnya dan memberikannya ke program _FUSE_ yang meminta data, seperti saat melakukan perintah `cat`.
+
+- ```c
+  if(strcmp(path, "/very_spicy_info.txt") == 0){
+  uid_t user_id = fuse_get_context()->uid;
+  struct passwd* user_info = getpwuid(user_id);
+
+  if(user_info != NULL && strcmp(user_info->pw_name, "DainTontas") == 0){ ... }
+  ```
+Sama seperti yang terdapat pada fungsi `xmp_getattr()`, bagian ini juga melakukan pemeriksaan tentang _file_ apa yang sedang diakses dan siapa _user_ yang sedang mengaksesnya. Jika yang mengakses adalah `DainTontas`, maka akan ada operasi lebih lanjut yang dilakukan.
+
+- ```c
+  char* message_DainTontas = "Very spicy internal developer information: leaked roadmap.docx\n";
+  ```
+Jika _user_ adalah `DainTontas`, maka pesan yang akan dikirimkan, yaitu `"Very spicy internal developer information: leaked roadmap.docx"` disimpan dalam variabel `char` bernama `message_DainTontas`.
+
+- ```c
+  int len = strlen(message_DainTontas);
+  ```
+Potongan kode ini akan mendapatkan panjang `string` dari pesan yang akan dikirimkan ke `DainTontas` menggunakan fungsi `strlen`. Nilainya akan disimpan dalam variabel `len` bertipe `integer`.
+
+- ```c
+  if(offset >= len){
+      return 0;
+  }
+  ```
+Bagian ini akan memeriksa apakah `offset` sudah melewati panjang _file_ (`len`). Jika iya, maka sudah tidak ada lagi yang perlu dibaca dan program akan mengembalikan nilai `0` untuk berhenti. 
+
+- ```c
+  int message_remaining = len - offset;
+  int character_count;
+  ```
+Jika `offset` belum melewati panjang _file_, maka program akan menghitung berapa karakter yang tersisa mulai dari `offset`. Maka dari itu, hasil pengurangan dari total panjang _file_ dengan `offset` atau titik saat ini, akan membentuk variabel `message_remaining`. Variabel `character_count` juga dideklarasikan untuk tahap lebih lanjut.
+
+- ```c
+  if(size < message_remaining){
+      character_count = size;
+  }
+  else{
+      character_count = message_remaining;
+  }
+  ```
+Potongan kode ini adalah pengecekan terhadap berapa banyak karakter yang boleh dikirim oleh program. Jika `size` (ukuran yang diminta oleh sistem) kurang dari `message_remaining`, maka sistem boleh mengirim keseluruhan `size` tersebut (`character_count = size`). Namun, jika tidak, maka sistem hanya boleh mengirim sisa dari pesan yang ada, yaitu `message_remaining`. 
+
+- ```c
+  for(int i = 0; i < character_count; i++){
+      buf[i] = message_DainTontas[offset + i];
+  }
+  ```
+Di sini, program akan menyalin karakter satu per satu dari `string` pesan `DainTontas` ke _buffer_ `buf`. `buf[i]` atau `buf` pada posisi ke-`i` akan menyimpan karakter yang ada pada pesan `DainTontas` ke-`i` ditambah `offset` yang ada pada saat itu. 
+
+- ```c
+  return character_count;
+  ```
+Setelah semuanya selesai, akan dikembalikan nilai dari `character_count` sehingga sistem bisa tahu seberapa besar ukuran yang berhasil dibaca dan disalin ke _buffer_. 
+
+- ```c
+  else{
+       char* message_Other = "DainTontas' personal secret!!.txt\n";
+       
+       [Rest of the code ...]
+  }
+  ```
+Jika _user_ yang sedang mengakses bukan `DainTontas`, maka pesan yang dikirim akan menjadi `"DainTontas' personal secret!!.txt"`. Untuk proses sisanya, sama saja dengan apa yang sudah dijelaskan pada bagian `DainTontas`.
 
 ### Foto Hasil Output
 
