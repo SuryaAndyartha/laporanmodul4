@@ -1267,6 +1267,319 @@ Potongan kode pada fungsi `load_config()` yang akan membaca izin akses berbasis 
 
 ### c. Filtering Konten Dinamis
 
+```c
+static int is_binary_file(const char *path)
+{
+    const char *ext = strrchr(path, '.');
+    if (!ext)
+        return 0;
+
+    ext++;
+
+    const char *binary_exts[] = { "jpg", "jpeg", "png", "gif", "bmp", "pdf", "zip", "exe", NULL };
+
+    for (int i = 0; binary_exts[i] != NULL; i++)
+    {
+        if (strcasecmp(ext, binary_exts[i]) == 0)
+            return 1;
+    }
+    return 0;
+}
+```
+Fungsi `is_binary_file()` adalah fungsi yang digunakan untuk menentukan apakah sebuah _file_ tergolong sebagai _file_ biner atau bukan (berdasarkan ekstensinya). Bagian-bagian dari fungsi dijelaskan sebagai berikut.
+
+- ```c
+  const char *ext = strrchr(path, '.');
+  ```
+  Baris ini akan mencari ekstensi _file_ dengan menentukan karakter `.` terakhir pada _path_ menggunakan fungsi `strrchr`. Posisi karakter terakhir tersebut disimpan oleh _pointer_ `ext`.
+
+- ```c
+  if (!ext)
+    return 0;
+  ```
+  Jika tidak ditemukan karakter `.`, maka _file_ bukanlah bertipe biner, dan program akan dihentikan. 
+
+- ```c
+  ext++;
+  ```
+  Pointer `ext` akan beralih dari karakter `.` terakhir menuju ke karakter setelahnya. Hal ini dilakukan karena program harus membandingkan ekstensi suatu _file_, apakah termasuk ke dalam jenis biner.
+
+- ```c
+  const char *binary_exts[] = { "jpg", "jpeg", "png", "gif", "bmp", "pdf", "zip", "exe", NULL };
+  ```
+  _Pointer_ `char *binary_exts[]` adalah daftar ekstensi _file_ yang dianggap sebagai _file_ biner. `NULL` digunakan sebagai penanda akhir _array_ saat iterasi. 
+
+- ```c
+  for (int i = 0; binary_exts[i] != NULL; i++)
+    {
+        if (strcasecmp(ext, binary_exts[i]) == 0)
+            return 1;
+    }
+  ```
+  Ini adalah perulangan `for` yang akan membandingkan `ext` dengan daftar ekstensi biner yang ada pada `binary_exts[]`. `strcasecmp` digunakan agar perbandingan tidak _case-sensitive_. Jika cocok, maka _file_ dikategorikan sebagai biner dan mengembalikan nilai `1`.
+
+```c
+static char *replace_words_in_text(const char *input, size_t *out_len)
+{
+    const char *replacement = "lawak";
+    size_t replacement_len = strlen(replacement);
+
+    size_t input_len = strlen(input);
+    size_t bufsize = input_len * replacement_len + 1;
+    char *output = malloc(bufsize);
+    if (!output)
+        return NULL;
+
+    size_t in_pos = 0, out_pos = 0;
+
+    while (in_pos < input_len)
+    {
+        int matched = 0;
+        for (int i = 0; i < filter_word_count; i++)
+        {
+            size_t wlen = strlen(filter_words[i]);
+            if (in_pos + wlen <= input_len &&
+                strncasecmp(input + in_pos, filter_words[i], wlen) == 0)
+                {
+                    if (is_word_boundary(input, in_pos - 1, input_len) && is_word_boundary(input, in_pos + wlen, input_len))
+                    {
+                        if (out_pos + replacement_len >= bufsize)
+                        {
+                            bufsize *= 2;
+                            char *tmp = realloc(output, bufsize);
+                            if (!tmp)
+                            {
+                                free(output);
+                                return NULL;
+                            }
+                            output = tmp;
+                        }
+                        memcpy(output + out_pos, replacement, replacement_len);
+                        out_pos += replacement_len;
+                        in_pos += wlen;
+                        matched = 1;
+                        break;
+                    }
+                }
+        }
+        if (!matched)
+        {
+            if (out_pos + 1 >= bufsize)
+            {
+                bufsize *= 2;
+                char *tmp = realloc(output, bufsize);
+                if (!tmp)
+                {
+                    free(output);
+                    return NULL;
+                }
+                output = tmp;
+            }
+            output[out_pos++] = input[in_pos++];
+        }
+    }
+    output[out_pos] = '\0';
+    *out_len = out_pos;
+    return output;
+}
+```
+Fungsi `replace_words_in_text()` adalah fungsi yang akan mengembalikan salinan baru di mana semua kata yang cocok dengan daftar filter diganti dengan "lawak" secara _case-insensitive_. Bagian-bagian dari fungsi ini dijelaskan sebagai berikut. 
+
+- ```c
+  const char *replacement = "lawak";
+  size_t replacement_len = strlen(replacement);
+  ```
+  Di bagian ini, kata pengganti yaitu `"lawak"`, dan juga panjang dari kata pengganti, yaitu `replacement_len` (menggunakan fungsi `strlen`) dideklarasikan.
+
+- ```c
+  size_t input_len = strlen(input);
+  size_t bufsize = input_len * replacement_len + 1;
+  char *output = malloc(bufsize);
+  if (!output)
+    return NULL;
+  ```
+  Pada potongan kode ini, program akan mengukur panjang _input_ sebenarnya. Caranya adalahd dengan mengalokasikan _buffer_ `output` untuk menyimpan hasil teks yang ukurannya adalah `input_len * replacement_len + 1`. Jika `malloc` gagal, maka fungsi akan mengembalikan nilai `NULL`.
+
+- ```c
+  size_t in_pos = 0, out_pos = 0;
+  ```
+  Posisi saat ini di _input_ (`in_pos`) dan posisi tulis di _output_ (`out_pos`) diinisialisasi sebagai `0` pada awalan proses.
+
+- ```c
+  while (in_pos < input_len)
+  ```
+  Selama posisi _input_ masih kurang dari panjangnya (artinya dari awal sampai akhir kata), maka dilakukan iterasi tiap karakter untuk memproses seluruh _input_.
+
+- ```c
+  int matched = 0;
+  ```
+  Dibuat `flag` sebagai penanda apakah ada kata terfilter yang cocok di posisi `in_pos` saat ini.
+
+- ```c
+  for (int i = 0; i < filter_word_count; i++)
+  ```
+  Program akan mengiterasi semua kata dari daftar filter yang diperoleh dari _file_ konfigurasi `lawak.conf`.
+
+- ```c
+  size_t wlen = strlen(filter_words[i]);
+  ```
+  Tiap iterasi akan menghitung panjang kata filter saat ini.
+
+- ```c
+  if (in_pos + wlen <= input_len &&
+      strncasecmp(input + in_pos, filter_words[i], wlen) == 0)
+  ```
+  Memeriksa apakah _substring_ dari `input` sepanjang `wlen` mulai dari `in_pos` cocok dengan kata filter (_case-insensitive_).
+
+- ```c
+  if (is_word_boundary(input, in_pos - 1, input_len) && is_word_boundary(input, in_pos + wlen, input_len))
+  ```
+  Memeriksa apakah karakter sebelum dan sesudah cocoknya kata adalah batas kata (bukan bagian dari kata lain).
+
+- ```c
+  if (out_pos + replacement_len >= bufsize)
+  {
+      bufsize *= 2;
+      char *tmp = realloc(output, bufsize);
+      if (!tmp)
+      {
+          free(output);
+          return NULL;
+      }
+      output = tmp;
+  }
+  ```
+  Memeriksa apakah _buffer output_ cukup untuk menampung kata "lawak". Jika tidak cukup, maka akan realokasi _buffer_ sebanyak dua kali lipat.
+
+- ```c
+  memcpy(output + out_pos, replacement, replacement_len);
+  out_pos += replacement_len;
+  in_pos += wlen;
+  matched = 1;
+  break;
+  ```
+  Bagian ini akan menyalin `"lawak"` ke _output_ dan menggeser posisi _input_ sebanyak `wlen`. Ditandai juga bahwa pencocokan berhasil dengan mengubah `flag`  `matched` ke `1` da keluar dari perulangan kata filter.
+
+- ```c
+  if (!matched)
+  {
+      if (out_pos + 1 >= bufsize)
+      {
+          bufsize *= 2;
+          char *tmp = realloc(output, bufsize);
+          if (!tmp)
+          {
+              free(output);
+              return NULL;
+          }
+          output = tmp;
+      }
+      output[out_pos++] = input[in_pos++];
+  }
+  ```
+  Jika tidak ada kata terfilter yang cocok di posisi saat ini, maka harus dipastikan bahwa _buffer_ cukup untuk menampung 1 karakter biasa. Jika tidak cukup, maka realokasi seperti sebelumnya. Lalu, program akan menyalin karakter biasa dari _input_ ke _output_ dan melanjutkan ke karakter berikutnya.
+
+- ```c
+  output[out_pos] = '\0';
+  *out_len = out_pos;
+  return output;
+  ```
+  Setelah perulangan selesai, program akan melakukan _terminate output_ dengan `\0` agar `string` menjadi valid, menyimpan panjang _output_ di `out_len`, dan mengembalikan `string` hasil yang sudah difilter.
+
+```c
+static void base64_encode(const unsigned char *src, size_t len, char *out)
+{
+    int i, j;
+    for (i = 0, j = 0; i < len;)
+    {
+        uint32_t octet_a = i < len ? src[i++] : 0;
+        uint32_t octet_b = i < len ? src[i++] : 0;
+        uint32_t octet_c = i < len ? src[i++] : 0;
+
+        uint32_t triple = (octet_a << 16) + (octet_b << 8) + octet_c;
+
+        out[j++] = b64_table[(triple >> 18) & 0x3F];
+        out[j++] = b64_table[(triple >> 12) & 0x3F];
+        out[j++] = (i > len + 1) ? '=' : b64_table[(triple >> 6) & 0x3F];
+        out[j++] = (i > len) ? '=' : b64_table[triple & 0x3F];
+    }
+    out[j] = '\0';
+}
+```
+Fungsi `base64_encode()` adalah fungsi yang digunakan untuk menerima `array byte` mentah dan panjangnya, lalu menulisnya ke `string out` berupa teks dalam format `Base 64` _encoding_. Bagian dari fungsi ini dijelaskan sebagai berikut. 
+
+- ```c
+  int i, j;
+  ```
+  Dideklarasikan dua variabel `i` dan `j` sebagai posisi baca dari `array byte` (`src`) dan posisi tulis di `out`.
+
+- ```c
+  for (i = 0, j = 0; i < len;)
+  ```
+  Melakukan perulangan `for` yang akan membaca 3 `byte` sekaligus dari `src`, dan melakukan _encode_ menjadi 4 karakter `Base64`.
+
+- ```c
+  uint32_t octet_a = i < len ? src[i++] : 0;
+  uint32_t octet_b = i < len ? src[i++] : 0;
+  uint32_t octet_c = i < len ? src[i++] : 0;
+  ```
+  Di bagian ini, program akan mengambil 3 `byte` berturut-turut dari `src`. Jika sudah habis (`i >= len`), maka akan memakai nilai `0` sebagai _padding_. Tipe data `uint32_t` dipakai untuk memproses bit secara aman.
+
+- ```c
+  uint32_t triple = (octet_a << 16) + (octet_b << 8) + octet_c;
+  ```
+  Baris ini akan menggabungkan ketiga `byte` menjadi satu `uint32_t 24-bit`. `octet_a` menjadi 8 bit tertinggi, `octet_b` di tengah, dan `octet_c` di paling bawah.
+
+- ```c
+  out[j++] = b64_table[(triple >> 18) & 0x3F];
+  out[j++] = b64_table[(triple >> 12) & 0x3F];
+  out[j++] = (i > len + 1) ? '=' : b64_table[(triple >> 6) & 0x3F];
+  out[j++] = (i > len) ? '=' : b64_table[triple & 0x3F];
+  ```
+  Potongan kode ini akan menggunakan `6-bit` per karakter. `& 0x3F` akan mengambil 6 bit paling bawah. Jika _input_ tidak cukup 3 `byte`, maka karakter ke-3 dan ke-4 akan diisi dengan karakter `'='` sebagai _padding_.
+
+- ```c
+  out[j] = '\0';
+  ```
+  Setelah selesai, `string output` akan diakhiri oleh _null terminator_ agar bisa digunakan sebagai `string` biasa.
+
+### Lainnya
+
+Selain fungsi yang sudah dijelaskan, ada bagian penting yang tidak bisa dilupakan demi menyelesaikan _problem c_, seperti yang ada di bawah ini.
+
+```c
+if (strcmp(key, "FILTER_WORDS") == 0)
+{
+    char *token = strtok(value, ",");
+    while (token && filter_word_count < MAX_WORDS)
+    {
+        filter_words[filter_word_count++] = strdup(token);
+        token = strtok(NULL, ",");
+    }
+}
+```
+Potongan kode pada fungsi `load_config()` yang akan membaca baris `FILTER_WORDS` pada _file_ konfigurasi `lawak.conf` lalu menyimpan kata-kata tersebut ke dalam `array filter_words[]`. Fungsi `load_config()` akan dijelaskan lebih lanjut. 
+
+```c
+static int fs_read(const char *path, char *buf, size_t size, off_t offset, struct fuse_file_info *fi)
+{
+        ...
+        if (!is_binary_file(real_path))
+        {}
+        ...
+        char *replaced_text = replace_words_in_text(raw_text, &replaced_len);
+        ...
+```
+Pemanggilan fungsi `is_binary_file` dan `replace_words_in_text` pada fungsi `fs_read()`.
+
+### Foto Hasil Output
+
+![image alt]()
+![image alt]()
+![image alt]()
+![image alt]()
+![image alt]()
+
 ### d. Logging Akses
 
 ### e. Konfigurasi
