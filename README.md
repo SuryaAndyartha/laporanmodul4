@@ -21,6 +21,1047 @@
 
 ### Laporan Resmi Praktikum Modul 4 _(Module 4 Lab Work Report)_
 
+# LawakFS++ - A Cursed Filesystem with Censorship and Strict Access Policies
+
+Teja adalah seorang penggemar sepak bola yang sangat bersemangat. Namun, akhir-akhir ini, tim kesayangannya selalu tampil kurang memuaskan di setiap pertandingan. Kekalahan demi kekalahan membuat Teja muak dan kesal. "Tim lawak!" begitu umpatnya setiap kali timnya gagal meraih kemenangan. Kekecewaan Teja yang mendalam ini menginspirasi sebuah ide: bagaimana jika ada sebuah filesystem yang bisa menyensor hal-hal "lawak" di dunia ini?
+
+Untuk mengatasi hal tersebut, kami membuat filesystem terkutuk bernama **LawakFS++** yang mengimplementasikan kebijakan akses yang ketat, filtering konten dinamis, dan kontrol akses berbasis waktu untuk file tertentu. Filesystem ini dirancang sebagai read-only dan akan menerapkan perilaku khusus untuk akses file, termasuk logging dan manajemen konfigurasi.
+
+- Kamu boleh memilih direktori sumber dan mount point apa pun untuk filesystem kamu.
+
+- Kamu **wajib** mengimplementasikan setidaknya fungsi-fungsi berikut dalam struct `fuse_operations` kamu:
+
+  - `getattr`
+  - `readdir`
+  - `read`
+  - `open`
+  - `access`
+
+- Kamu diperbolehkan menyertakan fungsi tambahan seperti `init`, `destroy`, atau `readlink` jika diperlukan untuk implementasi kamu.
+
+- **LawakFS++ harus benar-benar read-only.** Setiap percobaan untuk melakukan operasi tulis dalam FUSE mountpoint harus **gagal** dan mengembalikan error `EROFS` (Read-Only File System).
+
+- System call berikut, dan perintah yang bergantung padanya, harus diblokir secara eksplisit:
+
+  - `write()`
+  - `truncate()`
+  - `create()`
+  - `unlink()`
+  - `mkdir()`
+  - `rmdir()`
+  - `rename()`
+
+> **Catatan:** Ketika pengguna mencoba menggunakan perintah seperti `touch`, `rm`, `mv`, atau perintah lain yang melakukan operasi tulis, mereka harus menerima error "Permission denied" atau "Read-only file system" yang jelas.
+
+### a. Ekstensi File Tersembunyi
+
+Setelah beberapa hari menggunakan filesystem biasa, Teja menyadari bahwa ekstensi file selalu membuat orang-orang bisa mengetahui jenis file dengan mudah. "Ini terlalu mudah ditebak!" pikirnya. Dia ingin membuat sistem yang lebih misterius, di mana orang harus benar-benar membuka file untuk mengetahui isinya.
+
+Semua file yang ditampilkan dalam FUSE mountpoint harus **ekstensinya disembunyikan**.
+
+- **Contoh:** Jika file asli adalah `document.pdf`, perintah `ls` di dalam direktori FUSE hanya menampilkan `document`.
+- **Perilaku:** Meskipun ekstensi disembunyikan, mengakses file (misalnya, `cat /mnt/your_mountpoint/document`) harus dipetakan dengan benar ke path dan nama aslinya (misalnya, `source_dir/document.pdf`).
+
+### b. Akses Berbasis Waktu untuk File Secret
+
+Suatu hari, Teja menemukan koleksi foto-foto memalukan dari masa SMA-nya yang tersimpan dalam folder bernama "secret". Dia tidak ingin orang lain bisa mengakses file-file tersebut kapan saja, terutama saat dia sedang tidur atau tidak ada di rumah. "File rahasia hanya boleh dibuka saat jam kerja!" putusnya dengan tegas.
+
+File yang nama dasarnya adalah **`secret`** (misalnya, `secret.txt`, `secret.zip`) hanya dapat diakses **antara pukul 08:00 (8 pagi) dan 18:00 (6 sore) waktu sistem**.
+
+- **Pembatasan:** Di luar rentang waktu yang ditentukan, setiap percobaan untuk membuka, membaca, atau bahkan melakukan list file `secret` harus menghasilkan error `ENOENT` (No such file or directory).
+- **Petunjuk:** Kamu perlu mengimplementasikan kontrol akses berbasis waktu ini dalam operasi FUSE `access()` dan/atau `getattr()` kamu.
+
+### c. Filtering Konten Dinamis
+
+Kekesalan Teja terhadap hal-hal "lawak" semakin memuncak ketika dia membaca artikel online yang penuh dengan kata-kata yang membuatnya kesal. Tidak hanya itu, gambar-gambar yang dia lihat juga sering kali tidak sesuai dengan ekspektasinya. "Semua konten yang masuk ke sistem saya harus difilter dulu!" serunya sambil mengepalkan tangan.
+
+Ketika sebuah file dibuka dan dibaca, isinya harus **secara dinamis difilter atau diubah** berdasarkan tipe file yang terdeteksi:
+
+| Tipe File      | Perlakuan                                                                                 |
+| :------------- | :---------------------------------------------------------------------------------------- |
+| **File Teks**  | Semua kata yang dianggap lawak (case-insensitive) harus diganti dengan kata `"lawak"`.    |
+| **File Biner** | Konten biner mentah harus ditampilkan dalam **encoding Base64** alih-alih bentuk aslinya. |
+
+> **Catatan:** Daftar "kata-kata lawak" untuk filtering file teks akan didefinisikan secara eksternal, seperti yang ditentukan dalam persyaratan **e. Konfigurasi**.
+
+### d. Logging Akses
+
+Sebagai seorang yang paranoid, Teja merasa perlu untuk mencatat setiap aktivitas yang terjadi di filesystemnya. "Siapa tahu ada yang mencoba mengakses file-file penting saya tanpa izin," gumamnya sambil menyiapkan sistem logging. Dia ingin setiap gerakan tercatat dengan detail, lengkap dengan waktu dan identitas pelakunya.
+
+Semua operasi akses file yang dilakukan dalam LawakFS++ harus **dicatat** ke file yang terletak di **`/var/log/lawakfs.log`**.
+
+Setiap entri log harus mematuhi format berikut:
+
+```
+[YYYY-MM-DD HH:MM:SS] [UID] [ACTION] [PATH]
+```
+
+Di mana:
+
+- **`YYYY-MM-DD HH:MM:SS`**: Timestamp operasi.
+- **`UID`**: User ID pengguna yang melakukan aksi.
+- **`ACTION`**: Jenis operasi FUSE (misalnya, `READ`, `ACCESS`, `GETATTR`, `OPEN`, `READDIR`).
+- **`PATH`**: Path ke file atau direktori dalam FUSE mountpoint (misalnya, `/secret`, `/images/photo.jpg`).
+
+> **Persyaratan:** Kamu **hanya diwajibkan** untuk mencatat operasi `read` dan `access` yang berhasil. Logging operasi lain (misalnya, write yang gagal) bersifat opsional.
+
+### e. Konfigurasi
+
+Setelah menggunakan filesystemnya beberapa minggu, Teja menyadari bahwa kebutuhannya berubah-ubah. Kadang dia ingin menambah kata-kata baru ke daftar filter, kadang dia ingin mengubah jam akses file secret, atau bahkan mengubah nama file secret itu sendiri. "Saya tidak mau repot-repot kompilasi ulang setiap kali ingin mengubah pengaturan!" keluhnya. Akhirnya dia memutuskan untuk membuat sistem konfigurasi eksternal yang fleksibel.
+
+Untuk memastikan fleksibilitas, parameter-parameter berikut **tidak boleh di-hardcode** dalam source code `lawak.c` kamu. Sebaliknya, mereka harus dapat dikonfigurasi melalui file konfigurasi eksternal (misalnya, `lawak.conf`):
+
+- **Nama file dasar** dari file 'secret' (misalnya, `secret`).
+- **Waktu mulai** untuk mengakses file 'secret'.
+- **Waktu berakhir** untuk mengakses file 'secret'.
+- **Daftar kata-kata yang dipisahkan koma** yang akan difilter dari file teks.
+
+**Contoh konten `lawak.conf`:**
+
+```
+FILTER_WORDS=ducati,ferrari,mu,chelsea,prx,onic,sisop
+SECRET_FILE_BASENAME=secret
+ACCESS_START=08:00
+ACCESS_END=18:00
+```
+
+FUSE kamu harus membaca dan mem-parse file konfigurasi ini saat inisialisasi.
+
+### Ringkasan Perilaku yang Diharapkan
+
+Untuk memastikan kejelasan, berikut adalah tabel konsolidasi perilaku yang diharapkan untuk skenario tertentu:
+
+| Skenario                                                              | Perilaku yang Diharapkan                                                                         |
+| :-------------------------------------------------------------------- | :----------------------------------------------------------------------------------------------- |
+| Mengakses file di luar waktu yang diizinkan (misalnya, file `secret`) | Mengembalikan `ENOENT` (No such file or directory)                                               |
+| Membaca file biner                                                    | Konten harus dioutput dalam **encoding Base64**                                                  |
+| Membaca file teks                                                     | Kata-kata yang difilter harus diganti dengan `"lawak"`                                           |
+| Melakukan list file di direktori mana pun                                  | Semua ekstensi file harus disembunyikan                                                          |
+| Mencoba menulis, membuat, atau mengganti nama file/direktori          | Mengembalikan `EROFS` (Read-Only File System)                                                    |
+| Logging operasi file                                                  | Entri baru harus ditambahkan ke `/var/log/lawakfs.log` untuk setiap operasi `read` dan `access`. |
+
+### Contoh Perilaku
+
+```bash
+$ ls /mnt/lawak/
+secret   image   readme
+
+$ cat /mnt/lawak/secret
+cat: /mnt/lawak/secret: No such file or directory
+# (Output ini diharapkan jika diakses di luar 08:00-18:00)
+
+$ cat /mnt/lawak/image
+<string base64 dari konten gambar>
+
+$ cat /mnt/lawak/readme
+"Ini adalah filesystem lawak."
+# (Kata "sisop" asli diganti dengan "lawak")
+
+$ sudo tail /var/log/lawakfs.log
+[2025-06-10 14:01:22] [1000] [READ] /readme
+[2025-06-10 14:01:24] [1000] [ACCESS] /secret
+```
+
+---
+
+### Penyelesaian
+
+### Kode lengkap lawak.c
+
+```c
+#define FUSE_USE_VERSION 28
+
+#include <fuse.h>
+#include <stdio.h>
+#include <errno.h>
+#include <stdlib.h>
+#include <string.h>
+#include <dirent.h>
+#include <unistd.h>
+#include <sys/types.h>
+#include <sys/stat.h>
+#include <fcntl.h>
+#include <pwd.h>
+#include <ctype.h>
+
+
+#define MAX_WORDS 100
+#define MAX_WORD_LEN 4096
+
+static char *filter_words[MAX_WORDS];
+static int filter_word_count = 0;
+static char secret_basename[MAX_WORD_LEN] = "";
+static int access_start_minutes = -1;
+static int access_end_minutes = -1;
+
+static const char *underlying_path = "/home/raden/Documents/my_dir";
+
+
+static const char b64_table[] = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+
+
+
+static int parse_time_str(const char *time_str)
+{
+    int h, m;
+    if (sscanf(time_str, "%d:%d", &h, &m) == 2 && h >= 0 && h < 24 && m >= 0 && m < 60)
+        return h * 60 + m;
+    return -1;
+}
+
+
+
+static void load_config()
+{
+    FILE *f = fopen("./lawak.conf", "r");
+    if (!f)
+        return;
+
+    char line[256];
+    while (fgets(line, sizeof(line), f))
+    {
+        char *eq = strchr(line, '=');
+        if (!eq)
+            continue;
+
+        *eq = '\0';
+        char *key = line;
+        char *value = eq + 1;
+
+        value[strcspn(value, "\r\n")] = 0;
+
+        if (strcmp(key, "FILTER_WORDS") == 0)
+        {
+            char *token = strtok(value, ",");
+            while (token && filter_word_count < MAX_WORDS)
+            {
+                filter_words[filter_word_count++] = strdup(token);
+                token = strtok(NULL, ",");
+            }
+        }
+        else if (strcmp(key, "SECRET_FILE_BASENAME") == 0)
+        {
+            strncpy(secret_basename, value, sizeof(secret_basename) - 1);
+        }
+        else if (strcmp(key, "ACCESS_START") == 0)
+        {
+            int minutes = parse_time_str(value);
+            if (minutes >= 0) access_start_minutes = minutes;
+        }
+        else if (strcmp(key, "ACCESS_END") == 0)
+        {
+            int minutes = parse_time_str(value);
+            if (minutes >= 0) access_end_minutes = minutes;
+        }
+    }
+
+    fclose(f);
+}
+
+
+
+static void log_action(const char *action, const char *path)
+{
+    FILE *logf = fopen("/var/log/lawakfs.log", "a");
+    if (!logf)
+        return;
+
+    time_t now = time(NULL);
+    struct tm *lt = localtime(&now);
+    char timestamp[32];
+    strftime(timestamp, sizeof(timestamp), "%Y-%m-%d %H:%M:%S", lt);
+
+    uid_t uid = fuse_get_context()->uid;
+
+    fprintf(logf, "[%s] [%d] [%s] [%s]\n", timestamp, uid, action, path);
+    fclose(logf);
+}
+
+
+
+static int is_word_boundary(const char *str, int pos, int len)
+{
+    if (pos == 0)
+        return 1;
+    if (pos == len)
+        return 1;
+    return !isalnum((unsigned char)str[pos]);
+}
+
+
+
+static char *replace_words_in_text(const char *input, size_t *out_len)
+{
+    const char *replacement = "lawak";
+    size_t replacement_len = strlen(replacement);
+
+    size_t input_len = strlen(input);
+    size_t bufsize = input_len * replacement_len + 1;
+    char *output = malloc(bufsize);
+    if (!output)
+        return NULL;
+
+    size_t in_pos = 0, out_pos = 0;
+
+    while (in_pos < input_len)
+    {
+        int matched = 0;
+        for (int i = 0; i < filter_word_count; i++)
+        {
+            size_t wlen = strlen(filter_words[i]);
+            if (in_pos + wlen <= input_len &&
+                strncasecmp(input + in_pos, filter_words[i], wlen) == 0)
+                {
+                    if (is_word_boundary(input, in_pos - 1, input_len) && is_word_boundary(input, in_pos + wlen, input_len))
+                    {
+                        if (out_pos + replacement_len >= bufsize)
+                        {
+                            bufsize *= 2;
+                            char *tmp = realloc(output, bufsize);
+                            if (!tmp)
+                            {
+                                free(output);
+                                return NULL;
+                            }
+                            output = tmp;
+                        }
+                        memcpy(output + out_pos, replacement, replacement_len);
+                        out_pos += replacement_len;
+                        in_pos += wlen;
+                        matched = 1;
+                        break;
+                    }
+                }
+        }
+        if (!matched)
+        {
+            if (out_pos + 1 >= bufsize)
+            {
+                bufsize *= 2;
+                char *tmp = realloc(output, bufsize);
+                if (!tmp)
+                {
+                    free(output);
+                    return NULL;
+                }
+                output = tmp;
+            }
+            output[out_pos++] = input[in_pos++];
+        }
+    }
+    output[out_pos] = '\0';
+    *out_len = out_pos;
+    return output;
+}
+
+
+
+static int is_binary_file(const char *path)
+{
+    const char *ext = strrchr(path, '.');
+    if (!ext)
+        return 0;
+
+    ext++;
+
+    const char *binary_exts[] = { "jpg", "jpeg", "png", "gif", "bmp", "pdf", "zip", "exe", NULL };
+
+    for (int i = 0; binary_exts[i] != NULL; i++)
+    {
+        if (strcasecmp(ext, binary_exts[i]) == 0)
+            return 1;
+    }
+    return 0;
+}
+
+
+
+static void base64_encode(const unsigned char *src, size_t len, char *out)
+{
+    int i, j;
+    for (i = 0, j = 0; i < len;)
+    {
+        uint32_t octet_a = i < len ? src[i++] : 0;
+        uint32_t octet_b = i < len ? src[i++] : 0;
+        uint32_t octet_c = i < len ? src[i++] : 0;
+
+        uint32_t triple = (octet_a << 16) + (octet_b << 8) + octet_c;
+
+        out[j++] = b64_table[(triple >> 18) & 0x3F];
+        out[j++] = b64_table[(triple >> 12) & 0x3F];
+        out[j++] = (i > len + 1) ? '=' : b64_table[(triple >> 6) & 0x3F];
+        out[j++] = (i > len) ? '=' : b64_table[triple & 0x3F];
+    }
+    out[j] = '\0';
+}
+
+
+
+static void strip_extension(const char *filename, char *outname, size_t size)
+{
+    strncpy(outname, filename, size);
+    char *dot = strrchr(outname, '.');
+    if (dot)
+    {
+        *dot = '\0';
+    }
+}
+
+
+
+static int resolve_real_path(const char *virtual_path, char real_path[MAX_WORD_LEN])
+{
+    char temp[MAX_WORD_LEN];
+    char *token, *saveptr;
+    char current[MAX_WORD_LEN];
+
+    strncpy(temp, virtual_path, sizeof(temp));
+    snprintf(current, sizeof(current), "%s", underlying_path);
+
+    token = strtok_r(temp, "/", &saveptr);
+    while (token)
+    {
+        DIR *dp = opendir(current);
+        if (!dp)
+            return -ENOENT;
+
+        struct dirent *de;
+        int found = 0;
+        while ((de = readdir(dp)) != NULL)
+        {
+            char stripped[MAX_WORD_LEN];
+            strip_extension(de->d_name, stripped, sizeof(stripped));
+            if (strcmp(stripped, token) == 0)
+            {
+                strncat(current, "/", sizeof(current) - strlen(current) - 1);
+                strncat(current, de->d_name, sizeof(current) - strlen(current) - 1);
+                found = 1;
+                break;
+            }
+        }
+        closedir(dp);
+        if (!found)
+            return -ENOENT;
+
+        token = strtok_r(NULL, "/", &saveptr);
+    }
+
+    strncpy(real_path, current, MAX_WORD_LEN);
+    return 0;
+}
+
+
+void to_lowercase(char *str)
+{
+    while (*str)
+    {
+        *str = tolower((unsigned char)*str);
+        str++;
+    }
+}
+
+
+static int is_access_allowed(const char *path)
+{
+
+    if (secret_basename[0] == '\0') return 1;
+    if (access_start_minutes < 0 || access_end_minutes < 0)
+    return 1;
+
+    const char *base = strrchr(path, '/');
+    base = base ? base + 1 : path;
+
+    char name_only[MAX_WORD_LEN];
+    strip_extension(base, name_only, sizeof(name_only));
+    to_lowercase(name_only);
+
+    if (strncmp(name_only, secret_basename, strlen(secret_basename)) != 0)
+        return 1;
+
+    time_t now = time(NULL);
+    struct tm *lt = localtime(&now);
+    int hour = lt->tm_hour;
+    int now_minutes = hour * 60 + lt->tm_min;
+
+    return (now_minutes >= access_start_minutes && now_minutes < access_end_minutes);
+}
+
+
+
+static int fs_getattr(const char *path, struct stat *stbuf)
+{
+    char real_path[MAX_WORD_LEN];
+    if (resolve_real_path(path, real_path) != 0)
+        return -ENOENT;
+
+    if (lstat(real_path, stbuf) == -1)
+        return -errno;
+
+    return 0;
+}
+
+
+
+static int fs_readdir(const char *path, void *buf, fuse_fill_dir_t filler, off_t offset, struct fuse_file_info *fi)
+{
+    (void) offset;
+    (void) fi;
+
+
+    char real_path[MAX_WORD_LEN];
+    if (resolve_real_path(path, real_path) != 0)
+        return -ENOENT;
+
+    DIR *dp = opendir(real_path);
+    if (!dp)
+        return -errno;
+
+    filler(buf, ".", NULL, 0);
+    filler(buf, "..", NULL, 0);
+
+    struct dirent *de;
+    while ((de = readdir(dp)) != NULL)
+    {
+        if (de->d_name[0] == '.')
+            continue;
+
+        struct stat st;
+        char full[MAX_WORD_LEN];
+        snprintf(full, sizeof(full), "%s/%s", real_path, de->d_name);
+        if (stat(full, &st) == -1)
+            continue;
+
+        char stripped[MAX_WORD_LEN];
+        strip_extension(de->d_name, stripped, sizeof(stripped));
+
+        filler(buf, stripped, NULL, 0);
+    }
+
+    closedir(dp);
+    return 0;
+}
+
+
+
+static int fs_open(const char *path, struct fuse_file_info *fi)
+{
+    char real_path[MAX_WORD_LEN];
+
+    if (resolve_real_path(path, real_path) != 0)
+        return -ENOENT;
+
+    int fd = open(real_path, fi->flags);
+    if (fd == -1)
+        return -errno;
+
+    close(fd);
+    return 0;
+}
+
+
+
+static int fs_read(const char *path, char *buf, size_t size, off_t offset, struct fuse_file_info *fi)
+{
+    (void) fi;
+    char real_path[MAX_WORD_LEN];
+    if (resolve_real_path(path, real_path) != 0)
+        return -ENOENT;
+
+    if (!is_access_allowed(path))
+        return -EACCES;
+
+        if (!is_binary_file(real_path))
+        {
+
+            FILE *f = fopen(real_path, "r");
+            if (!f)
+                return -errno;
+
+            fseek(f, 0, SEEK_END);
+            long file_size = ftell(f);
+            fseek(f, 0, SEEK_SET);
+
+            char *raw_text = malloc(file_size + 1);
+            if (!raw_text)
+            {
+                fclose(f);
+                return -ENOMEM;
+            }
+
+            if (fread(raw_text, 1, file_size, f) != (size_t)file_size)
+            {
+                free(raw_text);
+                fclose(f);
+                return -EIO;
+            }
+            raw_text[file_size] = '\0';
+            fclose(f);
+
+            size_t replaced_len = 0;
+            char *replaced_text = replace_words_in_text(raw_text, &replaced_len);
+            free(raw_text);
+
+            if (!replaced_text)
+                return -ENOMEM;
+
+            if ((size_t)offset >= replaced_len)
+            {
+                free(replaced_text);
+                return 0;
+            }
+            if (offset + size > replaced_len)
+                size = replaced_len - offset;
+
+            memcpy(buf, replaced_text + offset, size);
+            free(replaced_text);
+            log_action("READ", path);
+            return size;
+        }
+
+    FILE *f = fopen(real_path, "rb");
+    if (!f)
+        return -errno;
+
+    fseek(f, 0, SEEK_END);
+    long file_size = ftell(f);
+    fseek(f, 0, SEEK_SET);
+
+    unsigned char *raw_data = malloc(file_size);
+    if (!raw_data)
+    {
+        fclose(f);
+        return -ENOMEM;
+    }
+
+    if (fread(raw_data, 1, file_size, f) != (size_t)file_size)
+    {
+        free(raw_data);
+        fclose(f);
+        return -EIO;
+    }
+    fclose(f);
+
+    size_t encoded_len = 4 * ((file_size + 2) / 3);
+    char *encoded = malloc(encoded_len + 1);
+    if (!encoded)
+    {
+        free(raw_data);
+        return -ENOMEM;
+    }
+
+    base64_encode(raw_data, file_size, encoded);
+    free(raw_data);
+
+    if ((size_t)offset >= encoded_len)
+    {
+        free(encoded);
+        return 0;
+    }
+
+    if (offset + size > encoded_len)
+        size = encoded_len - offset;
+
+    memcpy(buf, encoded + offset, size);
+    free(encoded);
+    log_action("READ", path);
+    return size;
+}
+
+
+
+static int fs_access(const char *path, int mask)
+{
+    char real_path[MAX_WORD_LEN];
+
+    if (resolve_real_path(path, real_path) != 0)
+        return -ENOENT;
+
+    if (!is_access_allowed(path))
+        return -EACCES;
+
+    int res = access(real_path, mask);
+    if (res == -1)
+        return -errno;
+
+    log_action("ACCESS", path);
+    return 0;
+}
+
+
+
+static int fs_write(const char *path, const char *buf, size_t size, off_t offset, struct fuse_file_info *fi)
+{
+    (void) path; (void) buf; (void) size; (void) offset; (void) fi;
+    return -EROFS;
+}
+static int fs_truncate(const char *path, off_t size)
+{
+    (void) path; (void) size;
+    return -EROFS;
+}
+static int fs_create(const char *path, mode_t mode, struct fuse_file_info *fi)
+{
+    (void) path; (void) mode; (void) fi;
+    return -EROFS;
+}
+static int fs_unlink(const char *path)
+{
+    (void) path;
+    return -EROFS;
+}
+static int fs_mkdir(const char *path, mode_t mode)
+{
+    (void) path; (void) mode;
+    return -EROFS;
+}
+static int fs_rmdir(const char *path)
+{
+    (void) path;
+    return -EROFS;
+}
+static int fs_rename(const char *from, const char *to)
+{
+    (void) from; (void) to;
+    return -EROFS;
+}
+
+
+
+static struct fuse_operations fs_oper = {
+    .getattr = fs_getattr,
+    .readdir = fs_readdir,
+    .open = fs_open,
+    .read = fs_read,
+    .access = fs_access,
+    .write = fs_write,
+    .truncate = fs_truncate,
+    .create = fs_create,
+    .unlink = fs_unlink,
+    .mkdir = fs_mkdir,
+    .rmdir = fs_rmdir,
+    .rename = fs_rename,
+};
+
+int main(int argc, char *argv[]) {
+    load_config();
+    return fuse_main(argc, argv, &fs_oper, NULL);
+}
+```
+
+### a. Ekstensi File Tersembunyi
+
+```c
+static void strip_extension(const char *filename, char *outname, size_t size)
+{
+    strncpy(outname, filename, size);
+    char *dot = strrchr(outname, '.');
+    if (dot)
+    {
+        *dot = '\0';
+    }
+}
+```
+Fungsi `strip_extension()` adalah fungsi yang digunakan untuk menghapus ekstensi _file_ (yaitu bagian setelah titik terakhir). Fungsi ini bisa bekerja dengan baik karena bagian-bagian berikut:
+
+-  ```c
+   strncpy(outname, filename, size);
+   ```
+   Baris ini akan menyalin nama _file_ yang berupa `string` (`filename`) ke variabel luaran bernama `outname` sebesar `size`.
+
+-  ```c
+   char *dot = strrchr(outname, '.');
+   ```
+   Fungsi `strchr()` akan mencari kemunculan terakhir dari karakter `.` dalam `string outname`. Jika ditemukan, maka _pointer_ `dot` akan menunjuk ke posisi karakter `.` terakhir.
+
+-  ```c
+   if (dot)
+   {
+        *dot = '\0';
+   }
+   ```
+   Jika `dot` bernilai `true` (artinya karakter `.` terakhir memang ditemukan), maka karakter yang ditunjuk oleh _pointer_ `dot` tadi diganti dengan _null terminator_ (`\0`). Dengan cara ini, `string outname` hanya akan berisi nama _file_ tanpa ekstensi di belakangnya.
+
+```c
+static int resolve_real_path(const char *virtual_path, char real_path[MAX_WORD_LEN])
+{
+    char temp[MAX_WORD_LEN];
+    char *token, *saveptr;
+    char current[MAX_WORD_LEN];
+
+    strncpy(temp, virtual_path, sizeof(temp));
+    snprintf(current, sizeof(current), "%s", underlying_path);
+
+    token = strtok_r(temp, "/", &saveptr);
+    while (token)
+    {
+        DIR *dp = opendir(current);
+        if (!dp)
+            return -ENOENT;
+
+        struct dirent *de;
+        int found = 0;
+        while ((de = readdir(dp)) != NULL)
+        {
+            char stripped[MAX_WORD_LEN];
+            strip_extension(de->d_name, stripped, sizeof(stripped));
+            if (strcmp(stripped, token) == 0)
+            {
+                strncat(current, "/", sizeof(current) - strlen(current) - 1);
+                strncat(current, de->d_name, sizeof(current) - strlen(current) - 1);
+                found = 1;
+                break;
+            }
+        }
+        closedir(dp);
+        if (!found)
+            return -ENOENT;
+
+        token = strtok_r(NULL, "/", &saveptr);
+    }
+
+    strncpy(real_path, current, MAX_WORD_LEN);
+    return 0;
+}
+```
+Fungsi `resolve_real_path()` bertujuan untuk menerjemahkan _path_ virtual yang dituliskan _user_ (tanpa ekstensi) menjadi _path_ asli dari _file_ yang ada di direktori (yang masih memiliki ekstensi). Fungsi ini dapat bekerja dengan bagian-bagian berikut:
+
+- ```c
+  char temp[MAX_WORD_LEN];
+  char *token, *saveptr;
+  char current[MAX_WORD_LEN];
+  ```
+  Di bagian ini, ada tiga variabel yang dideklarasi dan diinisialisasi. `temp` adalah _buffer_ untuk menyalin _path_ virtual supaya bisa dimodifikasi. _Pointer_ `token` dan `saveptr` digunakan untuk memecah _path_ virtual menjadi beberapa komponen (menggunakan `strtok`, akan dijelaskan lebih lanjut). Lalu, `current` akan menyimpan `path` saat ini ketika melakukan pencarian yang bersifat hierarkis. Di sini, `temp` dan `current` memiliki ukuran sebesar `MAX_WORD_LEN` yang merupakan makro untuk mendefinisikan ukuran maksimum `string`.
+  
+     * ```c
+       #define MAX_WORD_LEN 4096
+       ```
+       Nilai `4096` dipilih karena itu adalah ukuran umum untuk satu halaman memori (`4 KB`).
+
+- ```c
+  strncpy(temp, virtual_path, sizeof(temp));
+  ```
+  Baris ini akan menyalin `virtual_path` ke `temp` sebesar `sizeof(temp)` agar tidak mengubah argumen asli.
+
+- ```c
+  snprintf(current, sizeof(current), "%s", underlying_path);
+  ```
+  Baris ini menginisialisasi variabel `current` dengan `root` dari _underlying directory_ yang asli. Ini akan menjadi titik awal pencarian _file_ sebenarnya.
+
+ - ```c
+   token = strtok_r(temp, "/", &saveptr);
+   ```
+   Di sini, setiap komponen dari _path_ virtual akan diambil dengan pemisah karakter `/`. Dengan cara ini, program bisa mengetahui direktori apa saja yang dilalui dalam proses pencarian _file_.
+
+- ```c
+  while (token)
+    {
+        DIR *dp = opendir(current);
+        if (!dp)
+            return -ENOENT;
+    ...
+    }
+  ```
+  Selama komponen _path_ virtual masih ada, maka program akan membuka direktori saat ini (`current`). Jika tidak bisa dibuka, maka akan mengembalikan _error_ `-ENOENT` (_path_ yang menunjuk suatu direktori atau _file_ tersebut tidak ada).
+
+- ```c
+  struct dirent *de;
+  int found = 0;
+  ```
+  Bagian ini akan mendeklarasikan `struct dirent *de` yang merupakan representasi dari suatu entri dalam sebuah direktori. Lalu variabel `found` akan diinisialisasi sebagai `0` sebagai `flag` untuk menandakan apakah _file_/direktori yang cocok dengan nama _virtual_ berhasil ditemukan atau tidak.
+
+- ```c
+  while ((de = readdir(dp)) != NULL)
+   {
+       char stripped[MAX_WORD_LEN];
+       strip_extension(de->d_name, stripped, sizeof(stripped));
+   ...
+   }
+  ```
+  Perulangan `while` ini akan membaca semua entri dalam direktori yang sudah dibuka sampai `readdir(dp)` mengembalikan `NULL` (sudah tidak ada entri lagi). Dalam `loop` ini, akan dideklarasi variabel `stripped` yang merupakan _buffer_ untuk menyimpan nama _file_ tanpa ekstensi. Fungsi `strip_extension()` di sini juga dipanggil untuk memproses `de->d_name` (nama _file_ asli) yang lalu menyimpan versi tanpa ekstensi ke dalam `stripped`.
+
+- ```c
+  if (strcmp(stripped, token) == 0)
+       {
+           strncat(current, "/", sizeof(current) - strlen(current) - 1);
+           strncat(current, de->d_name, sizeof(current) - strlen(current) - 1);
+           found = 1;
+           break;
+       }
+  ```
+
+     * ```c
+       if (strcmp(stripped, token) == 0)
+       {
+          ...
+       }
+       ```
+       Program akan melakukan perbandingan antara variabel `stripped` yang merupakan nama _file_ tanpa ekstensi (hasil pemanggilan fungsi `strip_extension`) dan `token` yaitu bagian dari `virtual_path` atau _path_ yang diakses _user_ melalui _FUSE_.
+
+     * ```c
+       strncat(current, "/", sizeof(current) - strlen(current) - 1);
+       ```
+       Baris ini akan menambahkan karakter `/` ke variabel `current` menggunakan fungsi `strncat`. `strcncat` dipakai agar `string` masih bisa digabungkan tetapi tetap ada batas jumlah karakter agar tidak melebihi kapasitas _buffer_. `sizeof(current) - strlen(current) - 1` akan menghitung sisa ukuran yang ada dalam _buffer_ `current` untuk mencegah _overflow_.
+
+     * ```c
+       strncat(current, de->d_name, sizeof(current) - strlen(current) - 1);
+       ```
+       Setelah karakter `/` ditambahkan, program akan menambahkan nama _file_ asli (dengan ekstensi) yang didapatkan dari `de->d_name` menggunakan fungsi `strncat` juga.
+
+     * ```c
+       found = 1;
+       break;
+       ```
+       _File_ yang sudah dicari akan ditandai sudah ditemukan dan `loop` akan berhenti dengan pemanggilan `break`.
+
+- ```c
+  closedir(dp);
+  if (!found)
+       return -ENOENT;
+  ```
+  Setelah membaca direktori, maka direktori tersebut akan ditutup dengan `closedir()`. Jika tidak ditemukan _file_ yang cocok, maka akan mengembalikan pesan _error_ `-ENOENT`.
+
+- ```c
+  token = strtok_r(NULL, "/", &saveptr);
+  ```
+  Baris ini akan mengambil _token_ atau komponen selanjutnya (jika ada).
+
+- ```c
+  strncpy(real_path, current, MAX_WORD_LEN);
+  ```
+  Jika semua komponen berhasil ditemukan, maka program akan menyalin _path_ asli (`current`) ke variabel `string real_path`.
+
+```c
+static int fs_readdir(const char *path, void *buf, fuse_fill_dir_t filler, off_t offset, struct fuse_file_info *fi)
+{
+    (void) offset;
+    (void) fi;
+
+
+    char real_path[MAX_WORD_LEN];
+    if (resolve_real_path(path, real_path) != 0)
+        return -ENOENT;
+
+    DIR *dp = opendir(real_path);
+    if (!dp)
+        return -errno;
+
+    filler(buf, ".", NULL, 0);
+    filler(buf, "..", NULL, 0);
+
+    struct dirent *de;
+    while ((de = readdir(dp)) != NULL)
+    {
+        if (de->d_name[0] == '.')
+            continue;
+
+        struct stat st;
+        char full[MAX_WORD_LEN];
+        snprintf(full, sizeof(full), "%s/%s", real_path, de->d_name);
+        if (stat(full, &st) == -1)
+            continue;
+
+        char stripped[MAX_WORD_LEN];
+        strip_extension(de->d_name, stripped, sizeof(stripped));
+
+        filler(buf, stripped, NULL, 0);
+    }
+
+    closedir(dp);
+    return 0;
+}
+
+```
+Fungsi `fs_readdir()` adalah bentuk implementasi _FUSE_ yang akan menangani tindakan _user_ ketika melakukan pembacaan direktori, seperti perintah `ls`. 
+
+- ```c
+  (void) offset;
+  (void) fi;
+  ```
+  Dua baris ini digunakan untuk menghindari `warning` dari program. Variabel `offset` dan `fi` tidak digunakan.
+  
+- ```c
+  char real_path[MAX_WORD_LEN];
+  if (resolve_real_path(path, real_path) != 0)
+       return -ENOENT;
+  ```
+  Bagian ini sangat penting untuk memastikan nama _file_ tidak memiliki ekstensi. Fungsi `resolve_real_path` akan mencocokkan _path_ virtual dari _user_ ke _path_ asli atau sumber (yang memiliki ekstensi). Jika _path_ tersebut tidak valid, maka program akan mengembalikan pesan _error_ `-ENOENT`.
+
+- ```c
+  DIR *dp = opendir(real_path);
+  if (!dp)
+       return -errno;
+  ```
+  Bagian ini akan membuka direktori asli (`real_path`) yang sudah berhasil dipetakan dari _path_ virtual. Jika gagal, maka akan mengembalikan _error_ `-errno`.
+
+- ```c
+  filler(buf, ".", NULL, 0);
+  filler(buf, "..", NULL, 0);
+  ```
+  Di sini, program akan menambahkan entri standar `.` (direktori saat ini) dan `..` (direktori yang berada di tingkat atas/_parent directory_) ke hasil. Ini adalah prosedur standar untuk `readdir`.
+
+- ```c
+  struct dirent *de;
+  while ((de = readdir(dp)) != NULL)
+  ```
+  Di sini, akan dilakukan iterasi ke seluruh isi direktori yang sedang dibuka. Variabel `de` menyimpan informasi dari masing-masing entri.
+
+- ```c
+  if (de->d_name[0] == '.')
+    continue;
+  ```
+  Jika ditemukan _hidden file_ yang diawali titik `.` (contohnya `.basharc`) dalam entri yang ada, maka program akan melewatkannya.
+
+- ```c
+  struct stat st;
+  char full[MAX_WORD_LEN];
+  snprintf(full, sizeof(full), "%s/%s", real_path, de->d_name);
+  if (stat(full, &st) == -1)
+       continue;
+  ```
+
+  * ```c
+    struct stat st;
+    char full[MAX_WORD_LEN];
+    ```
+    Dideklarasikan struktur `stat` bernama `st` yang akan menyimpan berbagai informasi dari _file_ atau direktori seperti ukuran, mode, waktu akses, dan sebagainya. Variabel `full` juga akan menjadi _path_ lengkap dari _file_ di direktori. 
+
+  * ```c
+    snprintf(full, sizeof(full), "%s/%s", real_path, de->d_name);
+    ```
+    `snprintf` digunakan untuk menggabungkan `string` (dengan tidak melebihi batas _buffer_). `real_path` adalah direktori sumber yang sedang dibaca, `de->d_name` yaitu nama _file_ saat ini yang sedang diiterasi, dan `full` adalah _path_ lengkap. 
+     
+- ```c
+  char stripped[MAX_WORD_LEN];
+  strip_extension(de->d_name, stripped, sizeof(stripped));
+  ```
+  Bagian ini akan memanggil fungsi `strip_extensuon` sehingga program bisa menghapus ekstensi dari `de->d_name` dan menyimpannya pada variabel `stripped`. Bagian ini juga sangat penting untuk berjalannya penghapusan ekstensi pada nama _file_.  
+
+- ```c
+  filler(buf, stripped, NULL, 0);
+  ```
+  Baris ini akan menambahkan nama _file_ yang sudah dihilangkan ekstensinya ke daftar yang dikembalikan ke _FUSE_. Dengan begini, _user_ hanya akan melihat nama _file_ tanpa ekstensi ketika menggunakan perintah `ls`. 
+
+- ```c
+  closedir(dp);
+  ```
+  Setelah semuanya selesai, direktori akan ditutup dengan `closedir`.
+
+### Foto Hasil Output
+
+![image alt]()
+![image alt]()
+![image alt]()
+![image alt]()
+![image alt]()
+  
+### b. Akses Berbasis Waktu untuk File Secret
+
+### c. Filtering Konten Dinamis
+
+### d. Logging Akses
+
+### e. Konfigurasi
+
 # **Drama Troll**
 
 Dalam sebuah perusahaan penuh drama fandom, seorang karyawan bernama DainTontas telah menyinggung komunitas Gensh _ n, Z _ Z, dan Wut \* ering secara bersamaan. Akibatnya, dua rekan kerjanya, SunnyBolt dan Ryeku, merancang sebuah troll dengan gaya khas: membuat filesystem jebakan menggunakan FUSE.
