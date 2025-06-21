@@ -1116,6 +1116,155 @@ Pemanggilan fungsi `resolve_real_path` di fungsi `fs_access()`.
   
 ### b. Akses Berbasis Waktu untuk File Secret
 
+```c
+static int is_access_allowed(const char *path)
+{
+
+    if (secret_basename[0] == '\0') return 1;
+    if (access_start_minutes < 0 || access_end_minutes < 0)
+    return 1;
+
+    const char *base = strrchr(path, '/');
+    base = base ? base + 1 : path;
+
+    char name_only[MAX_WORD_LEN];
+    strip_extension(base, name_only, sizeof(name_only));
+    to_lowercase(name_only);
+
+    if (strncmp(name_only, secret_basename, strlen(secret_basename)) != 0)
+        return 1;
+
+    time_t now = time(NULL);
+    struct tm *lt = localtime(&now);
+    int hour = lt->tm_hour;
+    int now_minutes = hour * 60 + lt->tm_min;
+
+    return (now_minutes >= access_start_minutes && now_minutes < access_end_minutes);
+}
+```
+Fungsi `is_access_allowed()` adalah fungsi yang menentukan apakah sebuah _file_ yang bernama "secret" bisa diakses atau tidak, berdasarkan waktu sistem dan nama _file_. 
+
+- ```c
+  if (secret_basename[0] == '\0') return 1;
+  ```
+  Jika `string secret_basename` berisi _null terminator_, artinya belum diatur dari konfigurasi `lawak.conf`, maka program akan menganggap bahwa tidak ada _file_ yang dibatasi waktu.
+
+- ```c
+  if (access_start_minutes < 0 || access_end_minutes < 0)
+    return 1;
+  ```
+  Jika waktu akses belum diatur dengan benar (`access_start_minutes` dan `access_end_minutes` masih bernilai negatif), maka semua _file_ tidak dibatasi izinnya.
+
+- ```c
+  const char *base = strrchr(path, '/');
+  ```
+  Baris ini akan mencari posisi terakhir karakter `/` dalam _path_ agar bisa diambil nama _file_ saja.
+
+- ```c
+  base = base ? base + 1 : path;
+  ```
+  Jika karakter `/` tidak ditemukan, maka program akan menggeser _path_ sebanyak satu karakter ke depan.
+
+- ```c
+  char name_only[MAX_WORD_LEN];
+  ```
+  Di sini _buffer_ untuk menyimpan nama _file_ tanpa ekstensi dideklarasikan.
+
+- ```c
+  strip_extension(base, name_only, sizeof(name_only));
+  ```
+  Di baris ini, ekstensi dari _path_ yang disimpan oleh `base` akan dihapus dan disimpan ke variabel `name_only`.
+
+- ```c
+  to_lowercase(name_only);
+  ```
+  Fungsi `to_lowecase()` (akan dijelaskan lebih lanjut) mengubah seluruh huruf yang disimpan `name_only` menjadi huruf kecil, agar pencocokkan nama tidak _case-sensitive_.
+
+- ```c
+  if (strncmp(name_only, secret_basename, strlen(secret_basename)) != 0)
+      return 1;
+  ```
+  Fungsi `strncmp` akan membandingkan nama _file_ tanpa ekstensi dengan nama yang diatur oleh konfigurasi. Jika tidak cocok, maka _file_ tersebut tidak bernama "secret" dan boleh diakses.
+
+- ```c
+  time_t now = time(NULL);
+  struct tm *lt = localtime(&now);
+
+  ```
+  Baris ini akan mengambil waktu saat ini dengan fungsi `time` yang kemudian disimpan di variabel `now` dengan tipe data `time_t`. Lalu, waktu saat ini (`time_t`) diubah menjadi struktur waktu lokal (`tm`), agar bisa diambil jam dan menitnya. 
+
+- ```c
+  int hour = lt->tm_hour;
+  int now_minutes = hour * 60 + lt->tm_min;
+  ```
+  Variabel `hour` akan menyimpan nilai jam (`0 - 23`) dari waktu sekarang (`lt->tm_hour`). Lalu, dilakukan konversi jam dan menit menjadi jumlah menit sejak tengah malam menggunakan `hour * 60 + lt->tm_min` agar memudahkan perbandingan `ACCESS_START` dan `ACCESS_END`. 
+  
+- ```c
+  return (now_minutes >= access_start_minutes && now_minutes < access_end_minutes);
+  ```
+  Setelah semuanya selesai, fungsi akan mengembalikan nilai `1` yang berarti _file_ boleh diakses jika waktu sekarang berada pada rentang yang diizinkan.
+
+### Lainnya
+
+Selain fungsi yang sudah dijelaskan, ada bagian penting yang tidak bisa dilupakan demi menyelesaikan _problem b_, seperti yang ada di bawah ini.
+
+```c
+void to_lowercase(char *str)
+{
+  while (*str)
+  {
+      *str = tolower((unsigned char)*str);
+      str++;
+  }
+}
+```
+  Fungsi `to_lowercase()` adalah fungsi yang digunakan untuk mengubah _path_ menjadi huruf kecil semua demi membuat perbandingan _case-insensitive_. Selama karakter yang ditunjuk oleh _pointer_ `str` masih ada (`while(*str)`), maka program akan melakukan iterasi dari awal sampai akhir `string`. Setiap karakter yang diiterasi akan diubah menjadi huruf kecil menggunakan fungsi `tolower`. 
+  
+```c
+static int fs_read(const char *path, char *buf, size_t size, off_t offset, struct fuse_file_info *fi)
+{
+    ...
+    if (!is_access_allowed(path))
+        return -EACCES;
+    ...
+}
+```
+Pemanggilan fungsi `is_access_allowed` di fungsi `fs_read()`. 
+
+```c
+static int fs_access(const char *path, int mask)
+{
+    ...
+    if (!is_access_allowed(path))
+        return -EACCES;
+    ...
+}
+```
+Pemanggilan fungsi `is_access_allowed` di fungsi `fs_access()`. 
+
+```c
+else if (strcmp(key, "ACCESS_START") == 0)
+{
+    int minutes = parse_time_str(value);
+    if (minutes >= 0) access_start_minutes = minutes;
+}
+else if (strcmp(key, "ACCESS_END") == 0)
+{
+    int minutes = parse_time_str(value);
+    if (minutes >= 0) access_end_minutes = minutes;
+}
+```
+Potongan kode pada fungsi `load_config()` yang akan membaca izin akses berbasis waktu melalui _file_ `lawak.conf`. Setiap bagian dari potongan kode ini dijelaskan sebagai berikut. Hal yang dilakukan dan berkaitan dengan _problem b_ di sini adalah variabel `key` yang akan berisi `string` seperti `"ACCESS_START"` atau `"ACCESS_END"` dari _file_ konfigurasi. Dan juga, variabel `value` yang berisi `string` yang menunjuk pada jam. Fungsi `load_config()` akan dijelaskan lebih lanjut. 
+
+### Foto Hasil Output
+
+![image alt]()
+![image alt]()
+![image alt]()
+![image alt]()
+![image alt]()
+
+
 ### c. Filtering Konten Dinamis
 
 ### d. Logging Akses
