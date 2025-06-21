@@ -1569,8 +1569,10 @@ static int fs_read(const char *path, char *buf, size_t size, off_t offset, struc
         ...
         char *replaced_text = replace_words_in_text(raw_text, &replaced_len);
         ...
+        base64_encode(raw_data, file_size, encoded);
+        ...
 ```
-Pemanggilan fungsi `is_binary_file` dan `replace_words_in_text` pada fungsi `fs_read()`.
+Pemanggilan fungsi `is_binary_file`, `replace_words_in_text`, dan `base64_encode` pada fungsi `fs_read()`.
 
 ### Foto Hasil Output
 
@@ -1582,7 +1584,306 @@ Pemanggilan fungsi `is_binary_file` dan `replace_words_in_text` pada fungsi `fs_
 
 ### d. Logging Akses
 
+```c
+static void log_action(const char *action, const char *path)
+{
+    FILE *logf = fopen("/var/log/lawakfs.log", "a");
+    if (!logf)
+        return;
+
+    time_t now = time(NULL);
+    struct tm *lt = localtime(&now);
+    char timestamp[32];
+    strftime(timestamp, sizeof(timestamp), "%Y-%m-%d %H:%M:%S", lt);
+
+    uid_t uid = fuse_get_context()->uid;
+
+    fprintf(logf, "[%s] [%d] [%s] [%s]\n", timestamp, uid, action, path);
+    fclose(logf);
+}
+```
+Fungsi `log_action()` adalah fungsi yang bertugas mencatat aktivitas ke dalam _file log_. Bagian dari fungsi ini dijelaskan sebagai berikut.
+
+- ```c
+  FILE *logf = fopen("/var/log/lawakfs.log", "a");
+  ```
+  Baris ini akan membuka _file log_ (`lawakfs.log`) pada _path_ `/var/log/` dalam mode _append_ (`"a"`) sehingga setiap baris baru akan ditambahkan di akhir _file_. Hasil dari `fopen()` akan disimpan dalam _pointer_ `logf`.
+
+- ```c
+  if (!logf)
+    return;
+  ```
+  Jika `fopen` gagal, maka fungsi akan keluar tanpa menulis apa-apa.
+
+- ```c
+  time_t now = time(NULL);
+  struct tm *lt = localtime(&now);
+  ```
+  Baris ini akan mendapatkan waktu sekarang dalam format _timestamp_ berdasarkan waktu `epoch`. Lalu, program akan mengubah waktu sekarang (`now`) ke struktur waktu lokat (`lt`) agar bisa diubah menjadi format tanggal dan jam.
+
+- ```c
+  char timestamp[32];
+  strftime(timestamp, sizeof(timestamp), "%Y-%m-%d %H:%M:%S", lt);
+  ```
+  Bagian ini akan membuat `string timestamp` dalam format `YYYY-MM-DD HH:MM:SS` dari `lt`.
+
+- ```c
+  uid_t uid = fuse_get_context()->uid;
+  ```
+  Setelahnya akan didapatkan _user ID_ (`uid`) dari _FUSE_ yang sedang aktif atau pengguna yang sedang menjalankan operasi _FUSE_ tersebut.
+
+- ```c
+  fprintf(logf, "[%s] [%d] [%s] [%s]\n", timestamp, uid, action, path);
+  ```
+  Baris ini akan menulis satu baris ke _file log_ sesuai dengan format `[YYYY-MM-DD HH:MM:SS] [UID] [ACTION] [PATH]`.
+
+- ```c
+  fclose(logf);
+  ```
+  Setelah semua proses selesai, maka _file log_ akan ditutup.
+
+### Lainnya
+
+Selain fungsi yang sudah dijelaskan, ada bagian penting yang tidak bisa dilupakan demi menyelesaikan _problem d_, seperti yang ada di bawah ini.
+
+```c
+static int fs_read(const char *path, char *buf, size_t size, off_t offset, struct fuse_file_info *fi)
+{
+    ...
+    log_action("READ", path);
+    ...
+}
+```
+Pemanggilan fungsi `log_action` di fungsi `fs_read()`.
+
+```c
+static int fs_access(const char *path, int mask)
+{
+    ...
+    log_action("ACCESS", path);
+    ...
+}
+```
+Pemanggilan fungsi `log_action` di fungsi `fs_access()`.
+
+### Foto Hasil Output
+
+![image alt]()
+![image alt]()
+![image alt]()
+![image alt]()
+![image alt]()
+
 ### e. Konfigurasi
+
+```c
+static void load_config()
+{
+    FILE *f = fopen("./lawak.conf", "r");
+    if (!f)
+        return;
+
+    char line[256];
+    while (fgets(line, sizeof(line), f))
+    {
+        char *eq = strchr(line, '=');
+        if (!eq)
+            continue;
+
+        *eq = '\0';
+        char *key = line;
+        char *value = eq + 1;
+
+        value[strcspn(value, "\r\n")] = 0;
+
+        if (strcmp(key, "FILTER_WORDS") == 0)
+        {
+            char *token = strtok(value, ",");
+            while (token && filter_word_count < MAX_WORDS)
+            {
+                filter_words[filter_word_count++] = strdup(token);
+                token = strtok(NULL, ",");
+            }
+        }
+        else if (strcmp(key, "SECRET_FILE_BASENAME") == 0)
+        {
+            strncpy(secret_basename, value, sizeof(secret_basename) - 1);
+        }
+        else if (strcmp(key, "ACCESS_START") == 0)
+        {
+            int minutes = parse_time_str(value);
+            if (minutes >= 0) access_start_minutes = minutes;
+        }
+        else if (strcmp(key, "ACCESS_END") == 0)
+        {
+            int minutes = parse_time_str(value);
+            if (minutes >= 0) access_end_minutes = minutes;
+        }
+    }
+
+    fclose(f);
+}
+```
+Fungsi `load_config()` adalah fungsi yang akan membaca _file_ konfigurasi `lawak.conf` yang berada di direktori saat program dijalankan. Bagian-bagian dari fungsi ini dijelaskan sebagai berikut. 
+
+- ```c
+  FILE *f = fopen("./lawak.conf", "r");
+  ```
+  Baris ini akan membuka _file_ konfigurasi `lawak.conf` dalam mode baca/_read_ (`"r"`).
+
+- ```c
+  if (!f)
+    return;
+  ```
+  Jika _file_ tidak dapat dibuka, maka fungsi akan keluar tanpa melakukan apa-apa.
+
+- ```c
+  char line[256];
+  ```
+  Disediakan _buffer_ untuk membaca satu baris konfigurasi.
+
+- ```c
+  while (fgets(line, sizeof(line), f))
+  ```
+  Perulangan `while` ini akan membaca baris demi baris dari _file_ konfigurasi sampai ditemukan _end of file_ (`EOF`) Setiap baris dibaca ke variabel `line`.
+
+- ```c
+  char *eq = strchr(line, '=');
+  if (!eq)
+    continue;
+  ```
+  Program akan mencari karakter `=` sebagai pemisah antara `key` dan `value`. Jika tidak ditemukan, baris tersebut diabaikan (bukan baris konfigurasi yang valid).
+
+- ```c
+  *eq = '\0';
+  char *key = line;
+  char *value = eq + 1;
+  ```
+  Bagian ini akan memisahkan `string line` menjadi dua bagian. `key` yang merupakan bagian sebelum karakter `=`, dan `value` yang berada setelah karakter `=`. Setelahnya, tanda `=` diubah menjadi _null terminator_ agar `key` menjadi `string` yang valid.
+
+- ```c
+  value[strcspn(value, "\r\n")] = 0;
+  ```
+  Baris ini menghapus karakter _newline_ (`\n`) atau _carriage return_ (`\r`) dari `value`.
+
+- ```c
+  if (strcmp(key, "FILTER_WORDS") == 0)
+  {
+      char *token = strtok(value, ",");
+      while (token && filter_word_count < MAX_WORDS)
+      {
+          filter_words[filter_word_count++] = strdup(token);
+          token = strtok(NULL, ",");
+      }
+  }
+  ```
+  Ini adalah bagian proses _parsing_ berdasarkan `key`. Jika `key` adalah `FILTER_WORDS` (`if (strcmp(key, "FILTER_WORDS") == 0)`), maka:
+   * ```c
+     char *token = strtok(value, ",");
+     ```
+     Pecah `value` menjadi beberapa bagian berdasarkan koma (`,`).
+
+   * ```c
+     while (token && filter_word_count < MAX_WORDS)
+     {
+        filter_words[filter_word_count++] = strdup(token);
+        token = strtok(NULL, ",");
+     }
+     ```
+     Setiap `token` akan disalin ke dalam `array` global `filter_words`. Proses ini berhenti jika mencapai batas maksimal (`MAX_WORDS`).
+
+- ```c
+  else if (strcmp(key, "SECRET_FILE_BASENAME") == 0)
+  {
+      strncpy(secret_basename, value, sizeof(secret_basename) - 1);
+  }
+  ```
+  Jika `key` adalah `SECRET_FILE_BASENAME`, maka `value` akan disimpan ke variabel gloval `secret_basename`.
+
+- ```c
+  else if (strcmp(key, "ACCESS_START") == 0)
+  {
+      int minutes = parse_time_str(value);
+      if (minutes >= 0) access_start_minutes = minutes;
+  }
+  ```
+  Jika `key` adalah `ACCESS_START`, maka program akan memanggil fungsi `parse_time_str()` untuk mengubah waktu (dengan format `HH:MM`) menjadi menit. Jika valid, hasilnya akan disimpan ke dalam `access_start_minutes`. 
+
+- ```c
+  else if (strcmp(key, "ACCESS_END") == 0)
+  {
+      int minutes = parse_time_str(value);
+      if (minutes >= 0) access_end_minutes = minutes;
+  }
+  ```
+  Sama seperti sebelumnya, tetapi kali ini adalah kasus jika `key` merupakan `ACCESS_END`. Maka fungsi `parse_time_str()` akan dipanggil dan format waktu diubah ke menit.
+
+- ```c
+  fclose(f);
+  ```
+  Setelah semua proses selesai, maka _file_ konfigurasi akan ditutup.
+
+```c
+static int parse_time_str(const char *time_str)
+{
+    int h, m;
+    if (sscanf(time_str, "%d:%d", &h, &m) == 2 && h >= 0 && h < 24 && m >= 0 && m < 60)
+        return h * 60 + m;
+    return -1;
+}
+```
+Fungsi `parse_time_str()` adalah fungsi yang akan mengubah `string` waktu dalam format `HH:MM` menjadi jumlah menit. Fungsi ini berguna untuk memudahkan perbandingan waktu. Bagian-bagian dari fungsi ini dijelaskan sebagai berikut.
+
+- ```c
+  int h, m;
+  ```
+  Variabel `h` dan `m` dideklarasi. Dua variabel ini yang akan menyimpan hasil _parsing_, jam dan menit.
+
+- ```c
+  if (sscanf(time_str, "%d:%d", &h, &m) == 2 && h >= 0 && h < 24 && m >= 0 && m < 60)
+  ```
+  `sscanf(time_str, "%d:%d", &h, &m)` akan mencoba untuk membaca format waktu tersebut dan mengisinya ke variabel `h` dan `m`. Jika berhasil dilakukan, maka `sscanf` akan mengembalikan nilai `2`. Dalam kondisi `if` ini, diperiksa juga persyaratan apakah variabel `h` di antara `0` dan `23`, serta `m` di antara `0` dan `59`. Jika semuanya berjalan secara aman, maka waktu bisa dianggap valid.
+
+- ```c
+  return h * 60 + m;
+  ```
+  Baris ini akan mengubah waktu ke satuan menit sejak tengah malam dengan rumus yang ada.
+
+- ```c
+  return -1;
+  ```
+  Jika _parsing_ gagal, maka fungsi mengembalikan `-1` sebagai tanda _error_.
+
+### Lainnya
+
+Selain fungsi yang sudah dijelaskan, ada bagian penting yang tidak bisa dilupakan demi menyelesaikan _problem e_, seperti yang ada di bawah ini.
+
+```c
+static char *filter_words[MAX_WORDS];
+static int filter_word_count = 0;
+static char secret_basename[MAX_WORD_LEN] = "";
+static int access_start_minutes = -1;
+static int access_end_minutes = -1;
+```
+Ini adalah variabel global yang dibutuhkan demi berjalannya pembacaan _file_ konfigurasi. `filter_words` akan menyimpan daftar kata-kata yang akan difilter dari baris `FILTER_WORDS` pada `lawak.conf`. `filter_word_count` akan menghitung jumlah kata yang sudah disimpan. `secret_basename` akan menyimpan nama dasar _file_ yang dianggap "secret" tanpa ekstensi. `access_start_minutes` dan `access_end_minutes` akan digunakan sebagai waktu mulai dan akhir akses _file_ dalam membandingkan waktu. 
+
+```c
+int main(int argc, char *argv[]) {
+    load_config();
+    ...
+}
+```
+Pemanggilan fungsi `load_config` di fungsi `main()`.
+
+### Foto Hasil Output
+
+![image alt]()
+![image alt]()
+![image alt]()
+![image alt]()
+![image alt]()
+
+---
 
 # **Drama Troll**
 
