@@ -1046,6 +1046,66 @@ Fungsi `fs_readdir()` adalah bentuk implementasi _FUSE_ yang akan menangani tind
   ```
   Setelah semuanya selesai, direktori akan ditutup dengan `closedir`.
 
+### Lainnya
+
+Selain ketiga fungsi yang sudah dijelaskan, ada bagian penting yang tidak bisa dilupakan demi menyelesaikan _problem a_, yaitu pemanggilan fungsi `resolve_real_path` dalam beberapa fungsi lain, seperti yang ada di bawah ini.
+
+```c
+static int fs_getattr(const char *path, struct stat *stbuf)
+{
+    ...
+    if (resolve_real_path(path, real_path) != 0)
+        return -ENOENT;
+    ...
+}
+```
+Pemanggilan fungsi `resolve_real_path` di fungsi `fs_getattr()`. 
+
+```c
+static int fs_readdir(const char *path, void *buf, fuse_fill_dir_t filler, off_t offset, struct fuse_file_info *fi)
+{
+    ...
+    if (resolve_real_path(path, real_path) != 0)
+        return -ENOENT;
+    ...
+}
+```
+Pemanggilan fungsi `resolve_real_path` di fungsi `fs_readdir()`. 
+
+```c
+static int fs_open(const char *path, struct fuse_file_info *fi)
+{
+    ...
+    if (resolve_real_path(path, real_path) != 0)
+        return -ENOENT;
+    ...
+}
+```
+Pemanggilan fungsi `resolve_real_path` di fungsi `fs_open()`. 
+
+```c
+static int fs_read(const char *path, char *buf, size_t size, off_t offset, struct fuse_file_info *fi)
+{
+    ...
+    if (resolve_real_path(path, real_path) != 0)
+        return -ENOENT;
+    ...
+}
+```
+Pemanggilan fungsi `resolve_real_path` di fungsi `fs_read()`. 
+
+```c
+static int fs_access(const char *path, int mask)
+{
+    ...
+    if (resolve_real_path(path, real_path) != 0)
+        return -ENOENT;
+    ...
+}
+```
+Pemanggilan fungsi `resolve_real_path` di fungsi `fs_access()`. 
+
+
 ### Foto Hasil Output
 
 ![image alt]()
